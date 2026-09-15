@@ -44,7 +44,7 @@ System font stack (`-apple-system, PingFang SC, Helvetica Neue, Microsoft YaHei,
 
 | Token | Size | Weight | Line height | Use |
 |---|---|---|---|---|
-| `--font-display` | 28 pt / 56 rpx | 700 | 1.2 | tab page title |
+| `--font-display` | 20 pt / 40 rpx | 700 | 1.2 | tab page title and 写真/头像 segment labels (reduced from 28 pt on 2026-09-15 so every tab header matches) |
 | `--font-h1` | 20 pt / 40 rpx | 700 | 1.3 | banner headline |
 | `--font-h2` | 17 pt / 34 rpx | 600 | 1.3 | section titles, template detail name |
 | `--font-body-strong` | 15 pt / 30 rpx | 600 | 1.4 | card titles |
@@ -100,7 +100,7 @@ System font stack (`-apple-system, PingFang SC, Helvetica Neue, Microsoft YaHei,
 
 | Component | Anatomy | States |
 |---|---|---|
-| `nav-bar` | large title 28 pt, capsule-safe right area, 10 pt bottom spacing; tabs use no subtitle. Segment variant: two 24 pt labels on one baseline, active 700 in `--color-text` with a 16×3 pt primary bar below, inactive 600 in `--color-text-3` | default, segment |
+| `nav-bar` | large title 20 pt, capsule-safe right area, 10 pt bottom spacing; tabs use no subtitle. Segment variant: two 20 pt labels on one baseline, active 700 in `--color-text` with a 14×3 pt primary bar below, inactive 500 in `--color-text-3` | default, segment |
 | `hero` (`y-banner`) | white→light-blue card 16 pt radius, headline h1, one factual subtitle, gradient pill button (立即制作 / 上传照片生成), right-side photo 104×138 pt with 12 pt radius and soft shadow; whole card tappable | loading skeleton |
 | `section-header` | h2 left, optional `更多 ›` caption right in `--color-text-3` | — |
 | `spec-card` | aspect-ratio glyph in the spec's background colour with a white person silhouette, name body-strong, `25×35 mm` (text-2), `295×413 px` (text-3), tabular nums | default, selected (tint bg + primary border) |

@@ -35,10 +35,10 @@ const onBack = () => goBack()
 .nav__title--large { font-size: $font-display; font-weight: 700; line-height: 1.2; letter-spacing: -0.5rpx; }
 .nav__subtitle { font-size: $font-body; color: $color-text-2; margin-top: 4rpx; }
 /* Segment titles: same size for both labels so they share one baseline; only colour and weight change. */
-.nav__tabs { display: flex; align-items: center; gap: 44rpx; }
+.nav__tabs { display: flex; align-items: center; gap: 40rpx; }
 .nav__tab { display: flex; flex-direction: column; align-items: center; }
-.nav__tab-text { font-size: 48rpx; line-height: 1.2; font-weight: 600; color: $color-text-3; letter-spacing: -0.5rpx; }
-.nav__tab-bar { width: 32rpx; height: 6rpx; border-radius: 3rpx; margin-top: 6rpx; background: $color-primary; opacity: 0; }
+.nav__tab-text { font-size: $font-display; line-height: 1.2; font-weight: 500; color: $color-text-3; }
+.nav__tab-bar { width: 28rpx; height: 6rpx; border-radius: 3rpx; margin-top: 8rpx; background: $color-primary; opacity: 0; }
 .nav__tab--on .nav__tab-text { font-weight: 700; color: $color-text; }
 .nav__tab--on .nav__tab-bar { opacity: 1; }
 </style>
