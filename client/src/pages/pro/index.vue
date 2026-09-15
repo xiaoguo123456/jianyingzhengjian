@@ -2,26 +2,18 @@
   <view class="page">
     <y-nav-bar title="职业照" />
     <view class="px">
-      <y-skeleton v-if="loading" type="home" />
+      <y-skeleton v-if="loading" type="home" variant="pro" />
       <y-error-state v-else-if="error" @retry="load()" />
       <template v-else-if="home">
-        <y-banner :banner="home.banner" cta="上传照片生成" @tap="startUpload('banner')" />
-
+        <y-banner :banner="home.banner" variant="professional" @press="startUpload('banner')" />
         <view class="section">
-          <y-section-header title="热门场景" more="更多场景" @more="openMore('职业照模板')" />
-          <view class="grid4">
-            <y-category-card v-for="c in home.hot_categories" :key="c.id" :name="c.name" :icon="c.icon" :cover="c.cover_url" @tap="openCategory(c.id, c.name)" />
+          <y-section-header title="精选形象" more="全部模板" @more="openMore('职业照模板')" />
+          <view class="scene-list">
+            <view v-for="c in home.hot_categories" :key="c.id" class="scene" hover-class="scene--hover" @tap="openCategory(c.id, c.name)">{{ c.name }}</view>
           </view>
-        </view>
-
-        <view class="section">
-          <y-section-header title="推荐模板" more="查看更多" @more="openMore('职业照模板')" />
-          <y-template-rail :templates="home.hot_templates || []" @tap="openTemplate" />
-        </view>
-
-        <view v-for="r in home.rails" :key="r.title" class="section">
-          <y-section-header :title="r.title" more="更多" @more="r.category_id ? openCategory(r.category_id, r.title) : openMore(r.title)" />
-          <y-template-rail :templates="r.templates" @tap="openTemplate" />
+          <view class="template-grid">
+            <y-template-card v-for="t in templates" :key="t.id" :template="t" @select="openTemplate" />
+          </view>
         </view>
       </template>
       <view class="tab-bottom" />
@@ -30,11 +22,15 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useHome } from '@/composables/useHome'
+import { homeTemplates } from '@/utils/home-layout'
 const { home, loading, error, load, startUpload, openTemplate, openCategory, openMore } = useHome('pro')
+const templates = computed(() => homeTemplates(home.value))
 </script>
 
 <style lang="scss" scoped>
-.grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16rpx; }
-.tab-bottom { height: calc(48rpx + env(safe-area-inset-bottom)); }
+.scene-list { display: flex; flex-wrap: wrap; gap: 12rpx; margin-bottom: 28rpx; }
+.scene { flex: 1; min-width: 120rpx; text-align: center; padding: 18rpx 8rpx; border-radius: $radius-sm; background: #ECEFF3; font-size: 24rpx; color: $color-text-2; white-space: nowrap; }
+.scene--hover { background: $color-primary-soft; color: $color-primary; }
 </style>

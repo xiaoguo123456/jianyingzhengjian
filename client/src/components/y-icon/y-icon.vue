@@ -7,7 +7,7 @@ import { computed } from 'vue'
 import { iconSrc } from '@/utils/icons'
 
 const props = withDefaults(defineProps<{ name: string; size?: number; color?: string; strokeWidth?: number }>(), {
-  size: 48, color: '#2F7BF6', strokeWidth: 1.75,
+  size: 48, color: '#2864DC', strokeWidth: 1.75,
 })
 const style = computed(() => ({
   width: `${props.size}rpx`,

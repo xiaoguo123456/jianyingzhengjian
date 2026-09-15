@@ -23,3 +23,7 @@ backend/data/
 
 # Claude Code per-user settings
 .claude/settings.local.json
+
+# 本地设计预览与生图原稿
+output/
+.playwright-mcp/

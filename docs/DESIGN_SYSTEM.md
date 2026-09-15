@@ -1,188 +1,115 @@
-# Design System
+# 映己设计系统
 
-Derived from the V1.0 mockups in `ui/`, PRD sections 39–40, and the fixes listed in `ui/UI_REVIEW.md`. Values are given in design points (375 pt wide artboard) and in rpx (750 rpx = 375 pt, so 1 pt = 2 rpx).
+更新日期：2026-09-15。基于已确认的首页改版方向：简洁、专业的轻摄影工作室。尺寸以 375 pt 画板为基准，1 pt = 2 rpx。
 
-## 1. Principles
+## 1. 设计原则
 
-1. **One blue system.** A single primary blue, one gradient for the primary action, tinted circles for icons. No second accent colour.
-2. **Information over decoration.** Every text line states a fact (size, output, what changes) or is removed. No slogans on cards, no script-font annotations, no "AI" pills.
-3. **Same skeleton on every tab.** Title → hero (the only call to action) → primary grid of photo tiles → template rails → TabBar (PRD 39). No feature strips, no sticky button: one CTA per screen.
-4. **One chevron.** `›` only on list rows and "更多 ›" links. Never on grid cards or buttons.
-5. **Template cards are image + name.** Tags allowed: `NEW`, `热门`.
+1. **照片优先。** 用真实质感、清楚构图的样片表达效果，减少重复宣传语、标签和说明。
+2. **统一组件，区分页面重点。** 证件照突出效率，职业照突出专业形象，写真突出风格探索，我的突出作品。
+3. **主次明确。** 蓝色用于主操作和选中状态；标题、模板名称、辅助信息分级；不通过极浅文字营造高级感。
+4. **保持紧凑。** 能通过间距分组的内容不另套卡片；避免大图标底板、装饰投影和重复推荐。
+5. **按需展示信息。** 首页规格保留名称和毫米尺寸，完整像素参数在规格详情与制作流程显示；错误、失效和待处理状态直接展示。
 
-## 2. Tokens
+## 2. 设计变量
 
-Implemented as SCSS variables in `uni.scss` and CSS custom properties in `App.vue`, consumed by every component.
+样式定义于 `client/src/uni.scss` 与 `client/src/App.vue`，两处保持一致。
 
-### 2.1 Colour
+### 2.1 颜色
 
-| Token | Value | Use |
+| 变量 | 色值 | 用途 |
 |---|---|---|
-| `--color-primary` | `#2F7BF6` | active tab, links, icon strokes, chevrons on hot links |
-| `--color-primary-strong` | `#1F66E0` | pressed state |
-| `--color-primary-soft` | `#E8F1FF` | icon circle background, credit banner base |
-| `--color-primary-tint` | `#F2F7FF` | selected card background |
-| `--gradient-primary` | `linear-gradient(90deg, #3A8DFF 0%, #35C3E6 100%)` | primary button, "看视频领次数" button |
-| `--gradient-banner` | `linear-gradient(135deg, #DCEBFF 0%, #EAF3FF 60%, #FFFFFF 100%)` | tab banners |
-| `--color-bg` | `#F2F4F8` | page background (neutral cool grey; the earlier `#EEF3FA` read too blue next to the photo tiles) |
-| `--color-surface` | `#FFFFFF` | cards, sheets, TabBar |
-| `--color-border` | `#E6ECF5` | 1 px separators |
-| `--color-text` | `#111827` | titles, primary text |
-| `--color-text-2` | `#4B5563` | body |
-| `--color-text-3` | `#8A94A6` | captions, sizes, placeholders |
-| `--color-success` | `#22C55E` | check passed |
-| `--color-warning` | `#F59E0B` | photo quality warnings |
-| `--color-danger` | `#EF4444` | failed, delete |
-| `--color-mask` | `rgba(17,24,39,0.45)` | sheet backdrop |
-| `--tab-inactive` | `#6B7280` | TabBar inactive icon and label |
+| `color-primary` | `#2864DC` | 主按钮、选中状态、活动导航 |
+| `color-primary-strong` | `#1F66E0` | 强调状态 |
+| `color-primary-soft` | `#EDF2FC` | 轻量选中底色 |
+| `color-primary-tint` | `#F4F6FB` | 弱选中背景 |
+| `color-bg` | `#F7F8FA` | 中性页面底色 |
+| `color-surface` | `#FFFFFF` | 内容容器、弹层、底部导航 |
+| `color-border` | `#E7E9ED` | 分割线 |
+| `color-text` | `#111827` | 标题、主要文字 |
+| `color-text-2` | `#4B5563` | 正文、分类名称 |
+| `color-text-3` | `#697386` | 尺寸、次级操作 |
+| `tab-inactive` | `#6B7280` | 未选中的导航图标和文字 |
 
-ID photo background swatches: white `#FFFFFF`, blue `#438EDB`, red `#FF0000`, grey `#808080`. These are content values from the spec library, not theme tokens.
+证件照背景色由规格数据决定，不随主题颜色修改。`gradient-primary`、`gradient-banner` 为兼容已有页面保留，值已改为纯色。状态色沿用现有成功、警告、错误语义。
 
-### 2.2 Typography
+### 2.2 字体
 
-System font stack (`-apple-system, PingFang SC, Helvetica Neue, Microsoft YaHei, sans-serif`). No web fonts.
+使用系统中文无衬线字体，不下载额外字体。
 
-| Token | Size | Weight | Line height | Use |
-|---|---|---|---|---|
-| `--font-display` | 20 pt / 40 rpx | 700 | 1.2 | tab page title and 写真/头像 segment labels (reduced from 28 pt on 2026-09-15 so every tab header matches) |
-| `--font-h1` | 20 pt / 40 rpx | 700 | 1.3 | banner headline |
-| `--font-h2` | 17 pt / 34 rpx | 600 | 1.3 | section titles, template detail name |
-| `--font-body-strong` | 15 pt / 30 rpx | 600 | 1.4 | card titles |
-| `--font-body` | 14 pt / 28 rpx | 400 | 1.5 | body, list rows |
-| `--font-caption` | 12 pt / 24 rpx | 400 | 1.4 | sizes, subtitles, TabBar labels |
-| `--font-mono-size` | 12 pt / 24 rpx | 400 | 1.4 | mm/px values (tabular figures via `font-variant-numeric: tabular-nums`) |
+| 内容 | 字号 | 字重 |
+|---|---|---|
+| 页标题、写真/头像切换 | 40 rpx | 700 / 未选中 500 |
+| 首屏主标题 | 42–46 rpx | 600 |
+| 分区标题 | 34 rpx | 600 |
+| 模板名称 | 28 rpx | 500 |
+| 用途列表 | 28 rpx | 400 |
+| 正文 | 28 rpx | 400 |
+| 次级操作、分类 | 24 rpx | 400 |
+| 首页规格尺寸 | 21 rpx | 400 |
 
-### 2.3 Spacing (4 pt grid)
+尺寸数字使用等宽数字特性，长模板名称单行省略，模板详情保留完整名称。
 
-| Token | pt | rpx | Use |
-|---|---|---|---|
-| `--space-1` | 4 | 8 | inline gaps |
-| `--space-2` | 8 | 16 | between text lines |
-| `--space-3` | 12 | 24 | card inner padding, grid gap |
-| `--space-4` | 16 | 32 | page horizontal margin, between sections' content |
-| `--space-5` | 24 | 48 | between sections |
-| `--space-6` | 32 | 64 | above primary button |
+### 2.3 间距与圆角
 
-### 2.4 Radius, elevation, borders
+- 页面两侧：32 rpx。
+- 内容分区间距：40 rpx；同一组标题与内容：20 rpx。
+- 模板两列：横向间距 20 rpx，纵向间距 28 rpx。
+- 四列规格：12 rpx 间距。
+- 图片、卡片圆角：16–24 rpx；主视觉最大 32 rpx。
+- 普通内容容器无投影，浮层保留必要的层级阴影。
+- 主按钮为纯蓝，圆角 24 rpx，高度 96 rpx；首页按钮按容器调整。
 
-| Token | Value |
+### 2.4 图标与反馈
+
+- 统一 24×24 逻辑画布、1.75 线宽、圆角端点。
+- 底部导航输出 72×72 PNG，未选中描边、选中实心。
+- 点击通过透明度或背景变化反馈，不做弹跳与整页入场动画。
+- 减少动态效果偏好开启时，禁用非必要动画。
+
+## 3. 首页结构
+
+### 证件照
+
+紧凑上传主视觉 → 四列常用规格 → 紧凑用途列表。规格图形按相同比例尺呈现相纸尺寸；首页隐藏像素参数和重复拍摄说明。拍摄建议仍在上传页显示。
+
+### 职业照
+
+半身职业样片与上传入口 → 轻量场景入口 → 两列精选模板。将推荐和分类推荐中的模板按 ID 去重，取消重复横向列表。场景点击进入对应分类，不伪装成已选中的筛选按钮。
+
+### 写真 / 头像
+
+写真使用横向环境人像主视觉 → 风格入口 → 两列精选写真 → 两张横向专题。专题照片专门留出文字空间，文字不压住人物面部。头像保留紧凑上传入口与方形两列模板。同一模块内合并推荐数据并去重。
+
+### 我的
+
+紧凑资料区 → 我的作品与分类筛选 → 可用次数与邀请入口 → 常用服务 → 设置。展示最近三张真实返回的作品缩略图，点击直接打开作品详情；分类切换请求对应作品，保留加载、失败重试和空状态。
+
+“原始照片”用于管理上传原图，“生成记录”用于查看生成任务，两者职责不同，保留独立入口。次数明细与邀请条件进入次数页面查看。
+
+## 4. 共享组件约定
+
+| 组件 | 约定 |
 |---|---|
-| `--radius-sm` | 8 pt (thumbnails, tags) |
-| `--radius-md` | 12 pt (cards) |
-| `--radius-lg` | 16 pt (banner, sheets) |
-| `--radius-pill` | 999 pt (buttons, pills) |
-| `--shadow-card` | `0 2px 8px rgba(47,123,246,0.06)` |
-| `--shadow-sheet` | `0 -4px 16px rgba(17,24,39,0.08)` |
-| border | 1 px `--color-border` on white cards over the tinted background is optional; shadow alone is the default |
+| `y-banner` | 紧凑、职业、写真三种布局；只显示主标题与操作；发出 `press` |
+| `y-spec-card` | 按尺寸绘制相纸轮廓；`compact` 隐藏像素尺寸；发出 `select` |
+| `y-template-card` | 照片与名称；默认无营销标签；标签需要时使用中文；发出 `select` |
+| `y-template-row` | `compact` 为用途列表；普通白底规格的人像轮廓使用有对比的颜色；发出 `select` |
+| `y-template-rail` | 保留可复用能力，事件统一为 `select`；首页不重复使用横向推荐 |
+| `y-credit-bar` | `compact` 用于我的页面；完整模式保留次数明细 |
+| `y-section-header` | 分区标题 600 字重，更多入口保留可点击面积 |
 
-### 2.5 Iconography
+组件自定义事件不使用 `tap` 或 `click`，避免 uni-app 将其作为原生事件处理。原生 `view` 的点击仍使用 `@tap`。
 
-- Single set: 24 pt line icons, 1.75 pt stroke, rounded caps, drawn in `--color-primary`, exported as SVG then PNG @2x/@3x.
-- Placed on a 48 pt circle filled `--color-primary-soft` for category and feature cards.
-- TabBar icons: 24 pt, outline inactive (`--tab-inactive`), filled primary active.
-- Never use third-party brand marks (WeChat logo) as icons.
+## 5. 图片素材
 
-### 2.6 Motion
+- 使用用户指定的 `gpt-image-2.5` 生成 20 张样片，涵盖证件照、职业照、写真、头像和专题。
+- 人物均为虚构成年人物；优先自然皮肤纹理、真实衣物材质与不同构图。
+- 客户端素材：`client/src/static/mock/`；后台种子素材：`backend/seed/assets/`。
+- 普通模板导出为 600×800 JPEG，横向主视觉为 960×640，专题按实际展示比例裁切为 960×330，并保留完整面部，头像为 560×560；派生的小尺寸头像为 400×400。
+- JPEG 质量 83，渐进式编码，保留独立原稿到本地 `output/imagegen/`。图片原稿和预览不提交到代码仓库。
+- 本次只更新本地代码和种子素材，已有数据库与线上对象存储不自动覆盖；接入后台时使用项目既有种子数据流程同步。
+- 生成密钥只在调用进程内使用，不写入代码、文档或构建产物。
 
-- Page transitions: platform default.
-- Sheets: 240 ms ease-out slide up, backdrop fade.
-- Generating page: looping stage animation (Lottie or CSS), stage label crossfade 200 ms.
-- Button press: opacity 0.85, no scale.
+## 6. 验收范围
 
-## 3. Layout
-
-- Safe areas: custom nav on tab pages respects `statusBarHeight` and the capsule rect; content bottom padding `env(safe-area-inset-bottom)` plus TabBar height.
-- Grid: page margin 16 pt; 4-column card grid with 12 pt gutters (card width ≈ 76 pt); 2-column template grid with 12 pt gutters; portrait "more" page uses a 2-column masonry.
-- Tabs have no sticky button. The hero card carries the CTA; flow pages (template detail, params, confirm) keep a sticky primary button.
-- Horizontal rails bleed to the screen edges (negative page margin) with 16 pt edge padding and 10 pt gutters; card width 132 pt (3:4) or 120 pt (1:1) so ~2.5 cards are visible.
-
-## 4. Components
-
-| Component | Anatomy | States |
-|---|---|---|
-| `nav-bar` | large title 20 pt, capsule-safe right area, 10 pt bottom spacing; tabs use no subtitle. Segment variant: two 20 pt labels on one baseline, active 700 in `--color-text` with a 14×3 pt primary bar below, inactive 500 in `--color-text-3` | default, segment |
-| `hero` (`y-banner`) | white→light-blue card 16 pt radius, headline h1, one factual subtitle, gradient pill button (立即制作 / 上传照片生成), right-side photo 104×138 pt with 12 pt radius and soft shadow; whole card tappable | loading skeleton |
-| `section-header` | h2 left, optional `更多 ›` caption right in `--color-text-3` | — |
-| `spec-card` | aspect-ratio glyph in the spec's background colour with a white person silhouette, name body-strong, `25×35 mm` (text-2), `295×413 px` (text-3), tabular nums | default, selected (tint bg + primary border) |
-| `category-card` | photo tile 1:1.28 with the name on a bottom scrim (white 14 pt 600); icon-circle variant only when no cover exists | default, pressed |
-| `template-rail` | horizontal scroll of `template-card`s, 132 pt wide (120 pt square), 10 pt gutters, edge-bleed | — |
-| `template-card` | cover 3:4 (1:1 for avatar) 12 pt radius, no card chrome, name 14 pt 600 below; tag pill top-left (热门 = white pill dark text, NEW = primary) | default, favorited (heart) |
-| `template-row` | 88×117 pt cover, name, one factual caption, chevron right | — |
-| `primary-button` | full width 48 pt, gradient, white 16 pt 600 text, leading icon optional; disabled = 40 % opacity | default, loading (spinner), disabled |
-| `credit-bar` | white card 16 pt radius: caption "生成次数", number 32 pt 700 with unit "次" on one baseline, one-line breakdown caption, right gradient pill "看视频 +1 次" (hidden when ads are off or the daily cap is reached; chevron instead when tappable). Optional bottom row with a divider: gift icon + invite reward copy + chevron | ads on / off, tappable, with invite row |
-| `ad-sheet` | title "免费生成", body "观看一段视频即可获得 1 次生成机会", primary button "看视频免费生成", secondary "取消" | loading, error copy |
-| `picker-sheet` | list of specs or template cards after upload-first entry (D-03) | — |
-| `photo-check-result` | preview, pass/fail badge, reason list, buttons "重新上传 / 继续" | pass, fail |
-| `stage-indicator` | three stages with the active one highlighted, no percentage | — |
-| `list-row` | 24 pt icon, label body, chevron | — |
-| `empty-state` | 96 pt illustration, one line, optional button | — |
-| `skeleton` | grey blocks matching card shapes | — |
-| `ai-label` | 10 pt caption chip "AI 生成" bottom-right of result images | — |
-| `share-sheet` | title 分享, optional toggle 分享作品 / 仅分享模板 (default 仅分享模板), 5:4 card preview, three actions 发送给朋友 / 分享到朋友圈 / 保存海报, one caption line with the invite reward from config | loading (poster rendering), permission denied |
-| `poster-preview` | full-screen 750×1334 poster, buttons 保存到相册 / 取消 | saving |
-| `share-landing-hero` | 3:4 shared image with `ai-label`, caption 好友用「{template}」生成了这张，试试同款, primary 上传照片生成同款 | fallback to plain template detail when revoked |
-
-## 5. Page templates
-
-### Content tab (证件照 / 职业照 / 写真)
-
-The 写真 tab replaces the large title with two segment titles, 写真 and 头像 (D-24). Each segment renders the skeleton below with its own module data; switching scrolls to top.
-
-```
-nav-bar (large title only)
-hero: headline, factual subtitle, pill CTA, photo          ← the only call to action
-section: 常用规格 | 热门场景 | 热门风格 | 头像类型          (4 spec cards / photo tiles, "更多 ›")
-idphoto: 常见用途 (spec rows) → 拍摄建议 (compact info card)
-others:  推荐模板 | 精选模板 | 热门模板 (template-rail, "查看更多 ›")
-         portrait: 专题 (2×2 wide photo cards with name + count)
-         0–3 secondary rails from `home.rails` (e.g. 求职面试, 本周新增)
-TabBar
-```
-
-Rationale (2026-09-15 review of the first build): the banner and the sticky button were the same action twice; the feature strips repeated the hero subtitle and looked tappable; 2×2 template cards were too large for an overview tab. Rails show more templates in less height and read as scrollable.
-
-### Mine tab
-
-```
-header on a soft blue wash (no nav title, no card): avatar 64 pt with 3 pt white ring, nickname 20 pt 700, "已生成 N 张作品", translucent white pill "编辑资料"
-credit-bar (tappable → credits page), overlapping the wash by 16 pt, with the invite row when share rewards are on
-section 我的作品: 4 photo tiles 1:1.28 with name + count on a scrim; empty module = white tile with image icon and "0 张"; header link "全部 N 张 ›"
-service card: 4-column icon grid 生成记录 / 收藏模板 / 照片管理 / 联系客服
-list card: 设置 (账号与隐私)
-footer links: 隐私政策 · 用户协议 (required by COMPLIANCE.md)
-TabBar
-```
-
-Rationale (2026-09-15): the page title repeated the tab label; a six-row list of equal weight hid the frequent entries; the invite entry belongs with the credits it earns. Icons in list rows now sit in a fixed flex box so they centre on the text line.
-
-### Flow pages
-
-`template-detail`: cover full-width 3:4, name h2, factual line, sample strip, favorite icon top-right, sticky "上传照片生成同款".
-`upload`: two large tiles (从相册选择 / 拍照), shooting tips list, privacy note.
-`idphoto-params`: preview, background swatches, clothing grid grouped 男士/女士, beauty segmented control (自然 / 轻度).
-`confirm`: summary card (target, photo thumb, params), credit-bar state, primary "开始生成".
-`generating`: template/spec name, stage-indicator, "可离开页面，完成后通知你".
-`result`: image with `ai-label`, actions row (保存图片 / 再生成一张 / 换一个模板), ID photo extra row (换背景, free and instant / 换服装, 1 credit), size caption for ID photo, share row (分享 → `share-sheet`).
-`idphoto-params`: options that add a gen-model step (any clothing other than 保持原服装, beauty 轻度) show a caption "消耗 1 次生成机会"; the default combination shows "免费" (D-18, D-21).
-
-### Share assets
-
-- Chat share card image: 5:4, exported at 1000×800; template covers get this variant in the admin asset pipeline; work shares use the server-made copy with the AI label.
-- Poster: 750×1334; image area top 750×1000 (aspect-fit on `--color-primary-soft`), template name h2, one slogan line caption, mini program code 160 pt bottom-right, brand mark bottom-left, 32 pt margins. Poster copy comes from config and follows the content rules in §6.
-
-## 6. Content rules
-
-- Sizes always as `25×35 mm` and `295×413 px` with a thin space before the unit, tabular figures.
-- Card captions: only facts (size, output aspect, what changes). Banned: 专业形象, 提升印象, 社交必备, 甜蜜出圈, 赢得心仪Offer and similar.
-- No absolute or promise words: 每一个标准, 3秒, 官方, 最.
-- Button verbs: 上传照片 / 开始生成 / 保存图片 / 再生成一张 / 换一个模板 / 重新上传 / 看视频免费生成.
-- Error copy is centralised in `utils/errors.ts` and mirrored in API.md.
-- Sample photos: licensed, balanced gender and age mix; ID photo samples use the spec's default background.
-
-## 7. Accessibility and device rules
-
-- Minimum tap target 44 pt; list rows 56 pt.
-- Text contrast ≥ 4.5:1 on cards; captions in `--color-text-3` on white pass (5.1:1).
-- Support font scaling by using rpx for layout and pt-equivalent rpx for type; no fixed-height text containers.
-- Test on 375×667 (small), 390×844, and a 360-wide Android device.
-- Dark mode: not supported in V1.0; `darkmode: false` in `app.json`.
+运行类型检查、H5 和微信小程序构建；检查 320、375、390、430 宽度的首页布局；手动验证上传、规格选择、模板详情、专题、头像切换、作品筛选及奖励入口。真机系统安全区、系统选图和微信原生广告需要在微信开发者工具或真机中继续验收。

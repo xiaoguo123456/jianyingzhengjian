@@ -28,7 +28,7 @@
         { "path": "work-detail/index", "style": { "navigationBarTitleText": "作品详情" } },
         { "path": "records/index", "style": { "navigationBarTitleText": "生成记录" } },
         { "path": "favorites/index", "style": { "navigationBarTitleText": "收藏模板" } },
-        { "path": "photos/index", "style": { "navigationBarTitleText": "照片管理" } },
+        { "path": "photos/index", "style": { "navigationBarTitleText": "原始照片" } },
         { "path": "credits/index", "style": { "navigationBarTitleText": "生成次数" } },
         { "path": "profile-edit/index", "style": { "navigationBarTitleText": "编辑资料" } },
         { "path": "settings/index", "style": { "navigationBarTitleText": "设置" } }
@@ -40,7 +40,7 @@
   },
   "tabBar": {
     "color": "#6B7280",
-    "selectedColor": "#2F7BF6",
+    "selectedColor": "#2864DC",
     "backgroundColor": "#FFFFFF",
     "borderStyle": "white",
     "list": [
@@ -54,8 +54,8 @@
     "navigationBarTextStyle": "black",
     "navigationBarTitleText": "映己",
     "navigationBarBackgroundColor": "#FFFFFF",
-    "backgroundColor": "#F2F4F8",
-    "backgroundColorTop": "#F2F4F8",
-    "backgroundColorBottom": "#F2F4F8"
+    "backgroundColor": "#F7F8FA",
+    "backgroundColorTop": "#F7F8FA",
+    "backgroundColorBottom": "#F7F8FA"
   }
 }

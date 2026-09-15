@@ -1,5 +1,5 @@
 <template>
-  <view class="tag" :class="`tag--${variant}`">{{ text }}</view>
+  <view class="tag" :class="`tag--${variant}`">{{ text === 'NEW' ? '上新' : text }}</view>
 </template>
 
 <script setup lang="ts">

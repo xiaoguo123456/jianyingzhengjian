@@ -2,7 +2,7 @@
   <view :class="['pb-wrap', { 'pb-wrap--sticky': sticky }]">
     <view class="pb" :class="{ 'pb--disabled': disabled || loading, 'pb--secondary': secondary }" hover-class="pb--hover" @tap="onTap">
       <view v-if="loading" class="pb__spinner" />
-      <y-icon v-else-if="icon" :name="icon" :size="40" :color="secondary ? '#2F7BF6' : '#FFFFFF'" :stroke-width="2" />
+      <y-icon v-else-if="icon" :name="icon" :size="36" :color="secondary ? '#2864DC' : '#FFFFFF'" :stroke-width="2" />
       <text class="pb__text">{{ text }}</text>
     </view>
     <slot name="under" />
@@ -22,14 +22,14 @@ const onTap = () => { if (!props.disabled && !props.loading) emit('press') }
   background: rgba(255, 255, 255, 0.96); box-shadow: $shadow-sheet;
 }
 .pb {
-  height: 96rpx; border-radius: $radius-pill; background: $gradient-primary; color: #fff;
+  height: 96rpx; border-radius: $radius-md; background: $color-primary; color: #fff;
   display: flex; align-items: center; justify-content: center; gap: 12rpx;
-  box-shadow: 0 8rpx 24rpx rgba(58, 141, 255, 0.28);
 }
 .pb--secondary { background: $color-primary-soft; color: $color-primary; box-shadow: none; }
 .pb--hover { opacity: 0.85; }
 .pb--disabled { opacity: 0.4; }
-.pb__text { font-size: 32rpx; font-weight: 600; }
+.pb__text { font-size: 30rpx; font-weight: 500; }
 .pb__spinner { width: 32rpx; height: 32rpx; border: 4rpx solid rgba(255, 255, 255, 0.5); border-top-color: #fff; border-radius: 50%; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .pb__spinner { animation: none; } }
 </style>

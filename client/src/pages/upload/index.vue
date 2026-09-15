@@ -28,7 +28,7 @@
         <view class="tips__row"><y-icon name="close" :size="28" color="#EF4444" :stroke-width="2.4" /><text>墨镜、口罩、极端侧脸、模糊照片</text></view>
       </view>
 
-      <view class="privacy">照片仅用于本次生成，{{ retention }} 天后自动删除，可随时在「照片管理」中删除。</view>
+      <view class="privacy">照片仅用于本次生成，{{ retention }} 天后自动删除，可随时在「原始照片」中删除。</view>
       <view v-if="isDev && !uploading" class="dev-sample" @tap="useSample">使用示例照片（仅开发环境）</view>
       <view v-if="uploading" class="uploading"><view class="uploading__bar" /><text>正在上传并检测照片…</text></view>
     </template>

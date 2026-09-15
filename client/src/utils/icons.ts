@@ -81,7 +81,7 @@ function b64(str: string): string {
 const cache = new Map<string, string>()
 
 /** Returns a data URI for the named icon in the given colour. */
-export function iconSrc(name: string, color = '#2F7BF6', strokeWidth = 1.75): string {
+export function iconSrc(name: string, color = '#2864DC', strokeWidth = 1.75): string {
   const key = `${name}|${color}|${strokeWidth}`
   const hit = cache.get(key)
   if (hit) return hit

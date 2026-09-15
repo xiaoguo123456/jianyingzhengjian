@@ -2,68 +2,47 @@
   <view class="page">
     <y-nav-bar title="写真" :tabs="segments" :active="seg" @change="switchSeg" />
     <view class="px">
-      <!-- 写真 -->
       <view v-show="seg === 'portrait'">
-        <y-skeleton v-if="pLoading" type="home" />
+        <y-skeleton v-if="pLoading" type="home" variant="portrait" />
         <y-error-state v-else-if="pError" @retry="pLoad()" />
         <template v-else-if="pHome">
-          <y-banner :banner="pHome.banner" cta="上传照片生成" @tap="pUpload('banner')" />
-
-          <view class="section">
-            <y-section-header title="热门风格" more="更多风格" @more="pOpenMore('写真模板')" />
-            <view class="grid4">
-              <y-category-card v-for="c in pHome.hot_categories" :key="c.id" :name="c.name" :cover="c.cover_url" @tap="pOpenCategory(c.id, c.name)" />
+          <y-banner :banner="pHome.banner" variant="editorial" @press="pUpload('banner')" />
+          <view class="style-list">
+            <view v-for="c in pHome.hot_categories" :key="c.id" class="style-item" hover-class="style-item--hover" @tap="pOpenCategory(c.id, c.name)">{{ c.name }}</view>
+            <view class="style-item style-item--more" hover-class="style-item--hover" @tap="pOpenMore('写真模板')">全部<y-icon name="chevron-right" :size="22" color="#697386" /></view>
+          </view>
+          <view class="section selection">
+            <y-section-header title="精选写真" more="全部模板" @more="pOpenMore('写真模板')" />
+            <view class="template-grid">
+              <y-template-card v-for="t in pTemplates" :key="t.id" :template="t" @select="pOpenTemplate" />
             </view>
           </view>
-
-          <view class="section">
-            <y-section-header title="精选模板" more="查看更多" @more="pOpenMore('写真模板')" />
-            <y-template-rail :templates="pHome.hot_templates || []" @tap="pOpenTemplate" />
-          </view>
-
-          <view class="section">
-            <y-section-header title="专题" />
-            <view class="grid2">
-              <view v-for="c in pHome.collections" :key="c.id" class="col" hover-class="col--hover" @tap="pOpenCollection(c.id, c.name)">
-                <image class="col__img" :src="c.cover_url" mode="aspectFill" lazy-load />
-                <view class="col__scrim" />
-                <view class="col__text">
-                  <view class="col__name">{{ c.name }}</view>
-                  <view class="col__count">{{ c.template_count }} 个模板</view>
-                </view>
+          <view v-if="pHome.collections?.length" class="section">
+            <y-section-header title="灵感专题" />
+            <view class="collections">
+              <view v-for="c in pHome.collections.slice(0, 2)" :key="c.id" class="collection" hover-class="collection--hover" @tap="pOpenCollection(c.id, c.name)">
+                <image class="collection__image" :src="c.cover_url" mode="aspectFill" lazy-load />
+                <view class="collection__scrim" />
+                <view class="collection__name">{{ c.name }}</view>
+                <view class="collection__arrow"><y-icon name="chevron-right" color="#FFFFFF" :size="28" /></view>
               </view>
             </view>
           </view>
-
-          <view v-for="r in pHome.rails" :key="r.title" class="section">
-            <y-section-header :title="r.title" more="更多" @more="r.category_id ? pOpenCategory(r.category_id, r.title) : pOpenMore(r.title)" />
-            <y-template-rail :templates="r.templates" @tap="pOpenTemplate" />
-          </view>
         </template>
       </view>
-
-      <!-- 头像 -->
       <view v-show="seg === 'avatar'">
-        <y-skeleton v-if="aLoading" type="home" />
+        <y-skeleton v-if="aLoading" type="home" variant="avatar" />
         <y-error-state v-else-if="aError" @retry="aLoad()" />
         <template v-else-if="aHome">
-          <y-banner :banner="aHome.banner" cta="上传照片生成" @tap="aUpload('banner')" />
-
-          <view class="section">
-            <y-section-header title="头像类型" more="更多类型" @more="aOpenMore('头像模板')" />
-            <view class="grid4">
-              <y-category-card v-for="c in aHome.hot_categories" :key="c.id" :name="c.name" :icon="c.icon" :cover="c.cover_url" @tap="aOpenCategory(c.id, c.name)" />
+          <y-banner :banner="aHome.banner" @press="aUpload('banner')" />
+          <view class="style-list">
+            <view v-for="c in aHome.hot_categories" :key="c.id" class="style-item" hover-class="style-item--hover" @tap="aOpenCategory(c.id, c.name)">{{ c.name }}</view>
+          </view>
+          <view class="section selection">
+            <y-section-header title="精选头像" more="全部模板" @more="aOpenMore('头像模板')" />
+            <view class="template-grid">
+              <y-template-card v-for="t in aTemplates" :key="t.id" :template="t" square @select="aOpenTemplate" />
             </view>
-          </view>
-
-          <view class="section">
-            <y-section-header title="热门模板" more="查看更多" @more="aOpenMore('头像模板')" />
-            <y-template-rail :templates="aHome.hot_templates || []" square @tap="aOpenTemplate" />
-          </view>
-
-          <view v-for="r in aHome.rails" :key="r.title" class="section">
-            <y-section-header :title="r.title" more="更多" @more="r.category_id ? aOpenCategory(r.category_id, r.title) : aOpenMore(r.title)" />
-            <y-template-rail :templates="r.templates" square @tap="aOpenTemplate" />
           </view>
         </template>
       </view>
@@ -78,15 +57,11 @@ import { computed } from 'vue'
 import { track } from '@/composables/useAnalytics'
 import { useHome } from '@/composables/useHome'
 import { useUiStore } from '@/store/ui'
+import { homeTemplates } from '@/utils/home-layout'
 import type { PortraitSegment } from '@/utils/routes'
-
 const ui = useUiStore()
-const segments = [
-  { key: 'portrait', label: '写真' },
-  { key: 'avatar', label: '头像' },
-]
+const segments = [{ key: 'portrait', label: '写真' }, { key: 'avatar', label: '头像' }]
 const seg = computed(() => ui.portraitSegment)
-
 const {
   home: pHome, loading: pLoading, error: pError, load: pLoad, startUpload: pUpload,
   openTemplate: pOpenTemplate, openCategory: pOpenCategory, openCollection: pOpenCollection, openMore: pOpenMore,
@@ -95,10 +70,10 @@ const {
   home: aHome, loading: aLoading, error: aError, load: aLoad, startUpload: aUpload,
   openTemplate: aOpenTemplate, openCategory: aOpenCategory, openMore: aOpenMore,
 } = useHome('avatar', { trackView: false })
-
+const pTemplates = computed(() => homeTemplates(pHome.value))
+const aTemplates = computed(() => homeTemplates(aHome.value))
 onLoad((q) => { if (q?.seg === 'avatar' || q?.seg === 'portrait') ui.setPortraitSegment(q.seg) })
 onShow(() => track('tab_view', { module: seg.value }))
-
 function switchSeg(key: string) {
   const next = key as PortraitSegment
   if (next === seg.value) return
@@ -109,14 +84,16 @@ function switchSeg(key: string) {
 </script>
 
 <style lang="scss" scoped>
-.grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16rpx; }
-.grid2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20rpx; }
-.col { position: relative; padding-top: 62%; border-radius: $radius-md; overflow: hidden; background: $color-primary-soft; }
-.col--hover { opacity: 0.88; }
-.col__img { position: absolute; top: 0; right: 0; bottom: 0; left: 0; width: 100%; height: 100%; }
-.col__scrim { position: absolute; top: 0; right: 0; bottom: 0; left: 0; background: linear-gradient(180deg, rgba(17, 24, 39, 0) 30%, rgba(17, 24, 39, 0.65) 100%); }
-.col__text { position: absolute; left: 20rpx; right: 20rpx; bottom: 16rpx; color: #fff; }
-.col__name { font-size: $font-body-strong; font-weight: 700; text-shadow: 0 2rpx 6rpx rgba(0, 0, 0, 0.25); }
-.col__count { font-size: 22rpx; opacity: 0.85; margin-top: 2rpx; }
-.tab-bottom { height: calc(48rpx + env(safe-area-inset-bottom)); }
+.style-list { display: flex; flex-wrap: wrap; gap: 8rpx; padding-top: 24rpx; }
+.style-item { display: flex; align-items: center; justify-content: center; gap: 2rpx; flex: 1; min-height: 76rpx; padding: 0 10rpx; border-radius: $radius-sm; background: #ECEFF3; color: $color-text-2; font-size: 23rpx; white-space: nowrap; }
+.style-item--more { flex: 0 0 auto; background: transparent; padding-right: 0; }
+.style-item--hover { background: $color-primary-soft; color: $color-primary; }
+.selection { margin-top: 32rpx; }
+.collections { display: flex; flex-direction: column; gap: 20rpx; }
+.collection { position: relative; height: 236rpx; border-radius: $radius-md; overflow: hidden; background: #667883; }
+.collection--hover { opacity: 0.88; }
+.collection__image, .collection__scrim { position: absolute; inset: 0; width: 100%; height: 100%; }
+.collection__scrim { background: linear-gradient(90deg, rgba(17, 24, 39, 0.55), rgba(17, 24, 39, 0) 80%); }
+.collection__name { position: absolute; left: 28rpx; bottom: 28rpx; color: #fff; font-size: 32rpx; font-weight: 500; }
+.collection__arrow { position: absolute; right: 24rpx; bottom: 28rpx; }
 </style>

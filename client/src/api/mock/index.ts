@@ -8,7 +8,7 @@ import { ApiError } from '@/utils/errors'
 import { moduleLinkPath } from '@/utils/routes'
 import { shortId, sleep } from '@/utils/uuid'
 import {
-  BANNERS, CATEGORIES, CLOTHING, COLLECTIONS, HOT_CATEGORY_IDS, HOT_TEMPLATE_IDS, INITIAL_WORKS,
+  BANNERS, CATEGORIES, CLOTHING, COLLECTIONS, COLLECTION_TEMPLATE_IDS, HOT_CATEGORY_IDS, HOT_TEMPLATE_IDS, INITIAL_WORKS,
   MOCK_USER, MORE_SPEC_IDS, RAILS, SAMPLE_OUTPUT, SPECS, SPEC_CATEGORIES, TEMPLATES,
 } from './data'
 
@@ -195,7 +195,7 @@ export const mockApi: Api = {
     await delay(200)
     let list = TEMPLATES.filter((t) => t.module === o.module)
     if (o.category_id) list = list.filter((t) => t.category?.id === o.category_id)
-    if (o.collection_id) list = list.slice(0, 4)
+    if (o.collection_id) list = list.filter((t) => (COLLECTION_TEMPLATE_IDS[o.collection_id!] || []).includes(t.id))
     if (o.hot) list = list.filter((t) => t.tags.includes('热门'))
     return paged(list.map(card), o.page, o.page_size)
   },
@@ -210,7 +210,7 @@ export const mockApi: Api = {
     await delay()
     const c = COLLECTIONS.find((x) => x.id === id)
     if (!c) throw new ApiError('NOT_FOUND', '', 404)
-    return { collection: c, templates: TEMPLATES.filter((t) => t.module === 'portrait').slice(0, 4).map(card) }
+    return { collection: c, templates: TEMPLATES.filter((t) => (COLLECTION_TEMPLATE_IDS[id] || []).includes(t.id)).map(card) }
   },
   async clothingOptions() { return CLOTHING },
 
