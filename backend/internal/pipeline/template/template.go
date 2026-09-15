@@ -120,6 +120,9 @@ func Run(ctx context.Context, d *steps.Deps, st *steps.State) (*steps.Output, er
 	if st.Template.Module == domain.ModuleAvatar && out.Bounds().Dx() != out.Bounds().Dy() {
 		out = local.SquareCropFace(out, st.Face.Box, 1024)
 	}
+	if cfg.Output != nil && cfg.Output.Width > 0 && cfg.Output.Height > 0 {
+		out = local.Fill(out, cfg.Output.Width, cfg.Output.Height)
+	}
 	st.Out = out
 	st.OutFormat = "jpeg"
 	if cfg.Style == "illustration" && res.HasAlpha {

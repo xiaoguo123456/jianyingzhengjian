@@ -7,7 +7,7 @@ import (
 	"os"
 
 	"yingji/backend/internal/app"
-	"yingji/backend/internal/domain"
+	"yingji/backend/internal/migration"
 	"yingji/backend/internal/seed"
 )
 
@@ -24,14 +24,14 @@ func main() {
 	defer a.Close()
 	switch os.Args[1] {
 	case "up":
-		if a.Cfg.IsProd() {
-			fmt.Println("refusing AutoMigrate in prod; use SQL migrations (migrations/README.md)")
-			os.Exit(1)
-		}
-		if err := a.DB.AutoMigrate(domain.AllModels()...); err != nil {
+		db, err := a.DB.DB()
+		if err != nil {
 			panic(err)
 		}
-		fmt.Println("schema up to date")
+		if err := migration.Up(ctx, db); err != nil {
+			panic(err)
+		}
+		fmt.Println("数据库迁移完成")
 	case "seed":
 		dir := "seed/assets"
 		if len(os.Args) > 2 {

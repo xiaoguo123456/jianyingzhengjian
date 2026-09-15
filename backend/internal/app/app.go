@@ -88,8 +88,8 @@ func New(ctx context.Context) (*App, error) {
 		return nil, fmt.Errorf("mysql: %w", err)
 	}
 	sqlDB, _ := db.DB()
-	sqlDB.SetMaxOpenConns(30)
-	sqlDB.SetMaxIdleConns(10)
+	sqlDB.SetMaxOpenConns(cfg.MySQLMaxOpen)
+	sqlDB.SetMaxIdleConns(cfg.MySQLMaxIdle)
 	sqlDB.SetConnMaxLifetime(time.Hour)
 
 	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr, Password: cfg.RedisPassword, DB: cfg.RedisDB})
@@ -101,6 +101,8 @@ func New(ctx context.Context) (*App, error) {
 	var store storage.ObjectStore
 	var local *storage.Local
 	switch cfg.StorageDriver {
+	case "oss":
+		store, err = storage.NewOSS(cfg.OSSRegion, cfg.OSSEndpoint, cfg.OSSPublicEndpoint, cfg.OSSBucket, cfg.OSSPrefix, cfg.OSSAccessKeyID, cfg.OSSAccessKeySecret)
 	case "cos":
 		store, err = storage.NewCOS(cfg.COSBucketURL, cfg.COSSecretID, cfg.COSSecretKey, cfg.COSCDNHost)
 	default:
@@ -111,11 +113,14 @@ func New(ctx context.Context) (*App, error) {
 		return nil, fmt.Errorf("storage: %w", err)
 	}
 
-	wx := wechat.New(cfg.WechatAppID, cfg.WechatSecret, rdb, !cfg.IsProd())
+	wx := wechat.New(cfg.WechatAppID, cfg.WechatSecret, rdb, cfg.IsDev())
 
 	var det face.Detector = face.Mock{}
 	var cmp face.Comparer = face.Mock{}
 	var mat matting.Matter = matting.Mock{}
+	if cfg.FaceProvider == "disabled" {
+		det, cmp = face.Disabled{}, face.Disabled{}
+	}
 	if cfg.FaceProvider == "tencent" {
 		t := face.NewTencent(cfg.TencentSecretID, cfg.TencentSecretKey, cfg.TencentRegion)
 		det, cmp = t, t
@@ -123,7 +128,15 @@ func New(ctx context.Context) (*App, error) {
 	}
 	vis := vision.New(det, cmp, mat)
 
-	models := []gm.Model{gm.Mock{Latency: 1500 * time.Millisecond}}
+	var models []gm.Model
+	if cfg.GenProviderDefault == "mock" && !cfg.IsProd() {
+		models = append(models, gm.Mock{Latency: 1500 * time.Millisecond})
+	}
+	if cfg.NewAPIKey != "" {
+		var prices map[string]int
+		_ = rt.JSON(ctx, "provider_prices", &prices)
+		models = append(models, gm.NewNewAPI(cfg.NewAPIKey, cfg.NewAPIModel, cfg.NewAPIBaseURL, prices["newapi/"+cfg.NewAPIModel]))
+	}
 	if cfg.VolcengineAPIKey != "" {
 		var prices map[string]int
 		_ = rt.JSON(ctx, "provider_prices", &prices)
@@ -141,7 +154,7 @@ func New(ctx context.Context) (*App, error) {
 	a := &App{Cfg: cfg, Runtime: rt, DB: db, RDB: rdb, Log: log, Store: store, LocalStore: local, WX: wx, Vision: vis, Gen: gen,
 		UserSigner: userSigner, AdminSigner: adminSigner}
 	a.Credit = credit.New(db, rt)
-	a.Auth = auth.New(db, wx, userSigner, !cfg.IsProd())
+	a.Auth = auth.New(db, wx, userSigner, cfg.IsDev())
 	a.Profile = profile.New(db, store)
 	a.Ads = ads.New(db, rt, a.Credit, cfg.WechatRewardAdUnitID)
 	a.Catalogue = catalogue.New(db, rdb)

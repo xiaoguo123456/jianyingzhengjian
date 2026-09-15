@@ -1,3 +1,5 @@
+> 部署与新增集成以 [部署说明](deploy/README.md) 为准：已加入 NewAPI 图像编辑、阿里云 OSS 和版本化 SQL 迁移。
+
 # 映己 backend (Go)
 
 Gin + GORM (MySQL 8) + Redis/Asynq. Architecture: `../docs/BACKEND_ARCHITECTURE.md`; API contract: `../docs/API.md`;

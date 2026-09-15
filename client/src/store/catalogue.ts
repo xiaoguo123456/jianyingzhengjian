@@ -8,6 +8,7 @@ export const useCatalogueStore = defineStore('catalogue', {
   state: () => ({
     homes: {} as Partial<Record<Module, { data: HomePayload; at: number }>>,
     templates: {} as Record<string, Template>,
+    templateTimes: {} as Record<string, number>,
   }),
   actions: {
     async home(module: Module, force = false): Promise<HomePayload> {
@@ -18,9 +19,10 @@ export const useCatalogueStore = defineStore('catalogue', {
       return data
     },
     async template(id: string, force = false): Promise<Template> {
-      if (!force && this.templates[id]) return this.templates[id]
+      if (!force && this.templates[id] && Date.now() - (this.templateTimes[id] || 0) < TTL) return this.templates[id]
       const t = await api.template(id)
       this.templates[id] = t
+      this.templateTimes[id] = Date.now()
       return t
     },
     async toggleFavorite(id: string): Promise<boolean> {

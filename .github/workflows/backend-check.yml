@@ -1,0 +1,44 @@
+name: 后端检查
+on:
+  workflow_call:
+  pull_request:
+    paths: ['backend/**', '.github/workflows/**']
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci-only
+          MYSQL_DATABASE: yingji_ci
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -pci-only"
+          --health-interval=10s --health-timeout=5s --health-retries=30
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      MYSQL_DSN: 'root:ci-only@tcp(127.0.0.1:3306)/yingji_ci?parseTime=true&loc=UTC&charset=utf8mb4'
+      TEST_MYSQL_DSN: 'root:ci-only@tcp(127.0.0.1:3306)/yingji_ci?parseTime=true&loc=UTC&charset=utf8mb4'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: 单元与数据库集成测试
+        run: go test ./...
+      - name: 静态检查
+        run: go vet ./...
+      - name: 验证迁移重复执行
+        run: |
+          go run ./cmd/migrate up
+          go run ./cmd/migrate up
+          go run ./cmd/migrate seed

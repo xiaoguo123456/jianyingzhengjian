@@ -1,0 +1,74 @@
+name: 构建与部署后端
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      commit_sha:
+        required: true
+        type: string
+    secrets:
+      DEPLOY_SSH_KEY:
+        required: true
+      DEPLOY_HOST:
+        required: true
+      DEPLOY_KNOWN_HOSTS:
+        required: true
+permissions:
+  contents: read
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    concurrency:
+      group: yingji-${{ inputs.environment }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha }}
+          fetch-depth: 0
+      - name: 校验发布提交
+        env:
+          SHA: ${{ inputs.commit_sha }}
+        run: |
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
+          git fetch origin main
+          git merge-base --is-ancestor "$SHA" origin/main
+      - uses: docker/setup-buildx-action@v3
+      - name: 构建后端镜像
+        env:
+          SHA: ${{ inputs.commit_sha }}
+        run: |
+          docker buildx build --platform linux/amd64 --load -t "yingji-backend:$SHA" -f backend/deploy/Dockerfile.release backend
+          mkdir bundle
+          docker pull mysql:8.4
+          docker pull redis:7-alpine
+          docker save "yingji-backend:$SHA" mysql:8.4 redis:7-alpine | gzip > bundle/image.tar.gz
+          (cd bundle && sha256sum image.tar.gz > image.sha256)
+      - name: 配置 SSH
+        env:
+          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: 上传并部署固定版本
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          SHA: ${{ inputs.commit_sha }}
+        run: |
+          case "$ENVIRONMENT" in test|production) ;; *) exit 2;; esac
+          target="/opt/yingji-$ENVIRONMENT"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "root@$HOST" "mkdir -p '$target/releases/$SHA' '$target/scripts'"
+          scp -o StrictHostKeyChecking=yes bundle/* "root@$HOST:$target/releases/$SHA/"
+          scp -o StrictHostKeyChecking=yes backend/deploy/compose.release.yml "root@$HOST:$target/releases/$SHA/"
+          scp -o StrictHostKeyChecking=yes backend/deploy/scripts/*.sh "root@$HOST:$target/releases/$SHA/"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "root@$HOST" "DEPLOY_ROOT='$target' bash '$target/releases/$SHA/deploy.sh' '$SHA'"
+      - name: 清理运行器凭据
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519

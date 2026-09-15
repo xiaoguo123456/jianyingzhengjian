@@ -8,8 +8,8 @@ const APP_ENV = ((import.meta as any).env?.VITE_APP_ENV as AppEnv) || 'dev'
 
 const API_BASE: Record<AppEnv, string> = {
   dev: 'http://localhost:8080',
-  staging: 'https://api-staging.example.com',
-  prod: 'https://api.example.com',
+  staging: 'https://test-www.qhzhiyin.com/yingji',
+  prod: 'https://platform.qhzhiyin.com/yingji',
 }
 
 /** VITE_API_BASE overrides the host for the current env (handy when 8080 is taken). */

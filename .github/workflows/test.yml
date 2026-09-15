@@ -1,0 +1,21 @@
+name: 测试环境自动部署
+on:
+  push:
+    branches: [main]
+    paths: ['backend/**', '.github/workflows/**']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    uses: ./.github/workflows/backend-check.yml
+  deploy:
+    needs: check
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: test
+      commit_sha: ${{ github.sha }}
+    secrets:
+      DEPLOY_SSH_KEY: ${{ secrets.SSH_KEY }}
+      DEPLOY_HOST: ${{ secrets.TEST_SSH_HOST }}
+      DEPLOY_KNOWN_HOSTS: ${{ secrets.TEST_SSH_KNOWN_HOSTS }}
