@@ -136,8 +136,7 @@ func (s *Service) Create(ctx context.Context, userID string, in CreateInput) (*d
 			t.ConsumeLedgerID = &row.ID
 		}
 		if err := tx.Create(t).Error; err != nil {
-			var mysqlDup interface{ Error() string }
-			if errors.As(err, &mysqlDup) && isDuplicate(err) {
+			if isDuplicate(err) {
 				return errDuplicateKey
 			}
 			return err
@@ -164,7 +163,7 @@ func (s *Service) Create(ctx context.Context, userID string, in CreateInput) (*d
 var errDuplicateKey = errors.New("duplicate key")
 
 func isDuplicate(err error) bool {
-	return err != nil && (contains(err.Error(), "Duplicate entry") || contains(err.Error(), "1062"))
+	return err != nil && (contains(err.Error(), "Duplicate entry") || contains(err.Error(), "23505"))
 }
 
 func contains(s, sub string) bool {

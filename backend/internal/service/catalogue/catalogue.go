@@ -64,8 +64,8 @@ func (s *Service) Home(ctx context.Context, m domain.Module) (*HomeData, error) 
 		h.Banner = &banners[0]
 	}
 	if m == domain.ModuleIDPhoto {
-		s.db.WithContext(ctx).Where("status = 1 AND is_hot = 1").Order("sort ASC").Limit(4).Find(&h.HotSpecs)
-		s.db.WithContext(ctx).Where("status = 1 AND is_hot = 0").Order("sort ASC").Limit(4).Find(&h.MoreSpecs)
+		s.db.WithContext(ctx).Where("status = 1 AND is_hot = true").Order("sort ASC").Limit(4).Find(&h.HotSpecs)
+		s.db.WithContext(ctx).Where("status = 1 AND is_hot = false").Order("sort ASC").Limit(4).Find(&h.MoreSpecs)
 	} else {
 		s.db.WithContext(ctx).Where("module = ? AND kind = 'template' AND status = 1", m).Order("sort ASC").Limit(4).Find(&h.HotCategories)
 		if m == domain.ModulePortrait {
@@ -113,7 +113,7 @@ func (s *Service) Specs(ctx context.Context, categoryID string, hot bool) ([]dom
 		q = q.Where("category_id = ?", categoryID)
 	}
 	if hot {
-		q = q.Where("is_hot = 1")
+		q = q.Where("is_hot = true")
 	}
 	var specs []domain.Spec
 	err := q.Order("sort ASC").Find(&specs).Error
@@ -171,7 +171,7 @@ func (s *Service) Templates(ctx context.Context, q TemplateQuery) ([]domain.Temp
 		db = db.Where("templates.category_id = ?", q.CategoryID)
 	}
 	if q.Hot {
-		db = db.Where("templates.is_hot = 1")
+		db = db.Where("templates.is_hot = true")
 	}
 	if q.CollectionID != "" {
 		db = db.Joins("JOIN collection_templates ct ON ct.template_id = templates.id AND ct.collection_id = ?", q.CollectionID).Order("ct.sort ASC")

@@ -9,6 +9,8 @@ import (
 
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+	"yingji/backend/internal/domain"
 )
 
 // Defaults for runtime configuration keys (docs/BACKEND_ARCHITECTURE.md §8).
@@ -81,7 +83,7 @@ func (r *Runtime) Get(ctx context.Context, key string) json.RawMessage {
 	}
 	if raw == nil {
 		var row appConfigRow
-		err := r.db.WithContext(ctx).First(&row, "`key` = ?", key).Error
+		err := r.db.WithContext(ctx).First(&row, "key = ?", key).Error
 		switch {
 		case err == nil:
 			raw = row.Value
@@ -134,10 +136,7 @@ func (r *Runtime) Set(ctx context.Context, key string, value any, by string) err
 	if err != nil {
 		return err
 	}
-	err = r.db.WithContext(ctx).Exec(
-		"INSERT INTO app_configs (`key`, `value`, updated_by, updated_at) VALUES (?, ?, ?, NOW(3)) ON DUPLICATE KEY UPDATE `value` = VALUES(`value`), updated_by = VALUES(updated_by), updated_at = NOW(3)",
-		key, json.RawMessage(raw), by,
-	).Error
+	err = r.db.WithContext(ctx).Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "key"}}, DoUpdates: clause.AssignmentColumns([]string{"value", "updated_by", "updated_at"})}).Create(&domain.AppConfig{Key: key, Value: domain.JSON(raw), UpdatedBy: &by, UpdatedAt: time.Now().UTC()}).Error
 	if err != nil {
 		return err
 	}

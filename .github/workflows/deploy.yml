@@ -43,9 +43,7 @@ jobs:
         run: |
           docker buildx build --platform linux/amd64 --load -t "yingji-backend:$SHA" -f backend/deploy/Dockerfile.release backend
           mkdir bundle
-          docker pull mysql:8.4
-          docker pull redis:7-alpine
-          docker save "yingji-backend:$SHA" mysql:8.4 redis:7-alpine | gzip > bundle/image.tar.gz
+          docker save "yingji-backend:$SHA" | gzip > bundle/image.tar.gz
           (cd bundle && sha256sum image.tar.gz > image.sha256)
       - name: 配置 SSH
         env:

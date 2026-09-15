@@ -20,6 +20,7 @@ import (
 	"yingji/backend/internal/pkg/apperr"
 	"yingji/backend/internal/pkg/clock"
 	"yingji/backend/internal/pkg/idgen"
+	"yingji/backend/internal/pkg/redisx"
 	"yingji/backend/internal/provider/storage"
 )
 
@@ -35,9 +36,7 @@ const (
 	TypeConsistency  = "consistency:refund"
 )
 
-func redisOpt(cfg *config.Config) asynq.RedisClientOpt {
-	return asynq.RedisClientOpt{Addr: cfg.RedisAddr, Password: cfg.RedisPassword, DB: cfg.RedisDB}
-}
+func redisOpt(cfg *config.Config) redisx.QueueOpt { return redisx.QueueOpt{Cfg: cfg} }
 
 // Enqueuer implements task.Enqueuer.
 type Enqueuer struct{ c *asynq.Client }
@@ -292,8 +291,8 @@ func (h *handlers) rollup(ctx context.Context, t *asynq.Task) error {
 	}
 	var rows []row
 	err := a.DB.WithContext(ctx).Raw(`SELECT module, template_id, spec_id, COUNT(*) AS tasks_created,
-		SUM(status='success') AS tasks_success, SUM(status='failed') AS tasks_failed,
-		SUM(credits_consumed) AS credits_consumed, SUM(refund_ledger_id IS NOT NULL) AS credits_refunded, SUM(cost_cents) AS cost_cents
+		SUM(CASE WHEN status='success' THEN 1 ELSE 0 END) AS tasks_success, SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) AS tasks_failed,
+		SUM(credits_consumed) AS credits_consumed, SUM(CASE WHEN refund_ledger_id IS NOT NULL THEN 1 ELSE 0 END) AS credits_refunded, SUM(cost_cents) AS cost_cents
 		FROM tasks WHERE created_at >= ? AND created_at < ? GROUP BY module, template_id, spec_id`, start, end).Scan(&rows).Error
 	if err != nil {
 		return err

@@ -1,4 +1,4 @@
-// Package migration 按版本执行 SQL；记录校验和，失败后保留脏状态等待人工处理。
+// Package migration 在 PostgreSQL 事务中执行版本化 SQL，并校验历史文件摘要。
 package migration
 
 import (
@@ -8,10 +8,9 @@ import (
 	"embed"
 	"fmt"
 	"sort"
-	"strings"
 )
 
-//go:embed sql/*.sql
+//go:embed postgres/*.sql
 var files embed.FS
 
 func Up(ctx context.Context, db *sql.DB) error {
@@ -20,48 +19,50 @@ func Up(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 	defer conn.Close()
-	var locked int
-	if err = conn.QueryRowContext(ctx, "SELECT GET_LOCK('yingji_schema', 30)").Scan(&locked); err != nil || locked != 1 {
-		return fmt.Errorf("无法取得迁移锁")
+	var locked bool
+	if err = conn.QueryRowContext(ctx, "SELECT pg_try_advisory_lock(hashtext(current_database()), hashtext('yingji_schema'))").Scan(&locked); err != nil || !locked {
+		return fmt.Errorf("无法取得数据库迁移锁")
 	}
-	defer conn.ExecContext(context.Background(), "SELECT RELEASE_LOCK('yingji_schema')")
-	if _, err = conn.ExecContext(ctx, "CREATE TABLE IF NOT EXISTS schema_migrations (version varchar(100) PRIMARY KEY, checksum varchar(64) NOT NULL, dirty boolean NOT NULL, applied_at datetime(3) NOT NULL)"); err != nil {
+	defer conn.ExecContext(context.Background(), "SELECT pg_advisory_unlock(hashtext(current_database()), hashtext('yingji_schema'))")
+	if _, err = conn.ExecContext(ctx, "CREATE TABLE IF NOT EXISTS schema_migrations (version varchar(100) PRIMARY KEY, checksum varchar(64) NOT NULL, applied_at timestamptz NOT NULL)"); err != nil {
 		return err
 	}
-	entries, err := files.ReadDir("sql")
+	entries, err := files.ReadDir("postgres")
 	if err != nil {
 		return err
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
 	for _, entry := range entries {
 		name := entry.Name()
-		raw, _ := files.ReadFile("sql/" + name)
+		raw, e := files.ReadFile("postgres/" + name)
+		if e != nil {
+			return e
+		}
 		sum := fmt.Sprintf("%x", sha256.Sum256(raw))
 		var old string
-		var dirty bool
-		err = conn.QueryRowContext(ctx, "SELECT checksum, dirty FROM schema_migrations WHERE version=?", name).Scan(&old, &dirty)
+		err = conn.QueryRowContext(ctx, "SELECT checksum FROM schema_migrations WHERE version=$1", name).Scan(&old)
 		if err == nil {
-			if old != sum || dirty {
-				return fmt.Errorf("迁移 %s 已修改或处于失败状态，需人工核对数据库", name)
+			if old != sum {
+				return fmt.Errorf("迁移 %s 已修改，停止发布", name)
 			}
 			continue
 		}
 		if err != sql.ErrNoRows {
 			return err
 		}
-		if _, err = conn.ExecContext(ctx, "INSERT INTO schema_migrations(version,checksum,dirty,applied_at) VALUES(?,?,true,NOW(3))", name, sum); err != nil {
-			return err
+		tx, e := conn.BeginTx(ctx, nil)
+		if e != nil {
+			return e
 		}
-		for _, stmt := range strings.Split(string(raw), ";") {
-			if strings.TrimSpace(stmt) == "" {
-				continue
-			}
-			if _, err = conn.ExecContext(ctx, stmt); err != nil {
-				return fmt.Errorf("迁移 %s 失败: %w", name, err)
-			}
+		if _, e = tx.ExecContext(ctx, string(raw)); e == nil {
+			_, e = tx.ExecContext(ctx, "INSERT INTO schema_migrations(version,checksum,applied_at) VALUES($1,$2,NOW())", name, sum)
 		}
-		if _, err = conn.ExecContext(ctx, "UPDATE schema_migrations SET dirty=false,applied_at=NOW(3) WHERE version=?", name); err != nil {
-			return err
+		if e != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("迁移 %s 失败，已回滚: %w", name, e)
+		}
+		if e = tx.Commit(); e != nil {
+			return e
 		}
 	}
 	return nil

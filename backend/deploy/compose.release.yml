@@ -11,9 +11,6 @@ x-app: &app
   logging: &logging
     driver: json-file
     options: { max-size: "10m", max-file: "3" }
-  depends_on:
-    mysql: { condition: service_healthy }
-    redis: { condition: service_healthy }
 services:
   api:
     <<: *app
@@ -48,39 +45,6 @@ services:
     restart: "no"
     profiles: [tools]
     mem_limit: 192m
-  mysql:
-    image: mysql:8.4
-    environment:
-      MYSQL_DATABASE: yingji
-      MYSQL_USER: yingji
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?}
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?}
-    command: ["--innodb-buffer-pool-size=64M", "--performance-schema=OFF", "--max-connections=25", "--mysqlx=OFF", "--innodb-redo-log-capacity=64M"]
-    volumes: ["./data/mysql:/var/lib/mysql"]
-    restart: unless-stopped
-    mem_limit: 384m
-    cpus: 0.5
-    pids_limit: 128
-    logging: *logging
-    healthcheck:
-      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_PASSWORD mysql --protocol=tcp -h127.0.0.1 -uyingji -Dyingji -e 'SELECT 1' >/dev/null"]
-      interval: 10s
-      timeout: 5s
-      retries: 30
-  redis:
-    image: redis:7-alpine
-    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "32mb", "--maxmemory-policy", "noeviction"]
-    volumes: ["./data/redis:/data"]
-    restart: unless-stopped
-    mem_limit: 64m
-    cpus: 0.15
-    pids_limit: 64
-    logging: *logging
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 10
 networks:
   gateway:
     external: true

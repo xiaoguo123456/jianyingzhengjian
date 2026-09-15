@@ -1,105 +1,84 @@
-// Package testutil provides a MySQL-backed test harness. Tests are skipped when
-// TEST_MYSQL / TEST_MYSQL_DSN are unset, so `go test ./...` works without a database.
+// Package testutil 使用本地 PostgreSQL CI 数据库；每个测试拥有独立 schema。
 package testutil
 
 import (
-	"database/sql"
-	"os"
-	"path/filepath"
-	"regexp"
-	"strings"
-	"testing"
-	"time"
-
-	"github.com/go-sql-driver/mysql"
-	gormmysql "gorm.io/driver/mysql"
+	"fmt"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
-
+	"net/url"
+	"os"
+	"regexp"
+	"strings"
+	"sync/atomic"
+	"testing"
+	"time"
 	"yingji/backend/internal/config"
 	"yingji/backend/internal/domain"
 )
 
-const defaultDSN = "root:@tcp(127.0.0.1:3306)/yingji_test?parseTime=true&loc=UTC&charset=utf8mb4"
-
+var serial atomic.Uint64
 var nonWord = regexp.MustCompile(`[^a-zA-Z0-9_]`)
 
-// dbNameForPackage suffixes the database name with the test binary's name so that
-// packages tested in parallel (the default for `go test ./...`) do not truncate
-// each other's tables.
-func dbNameForPackage(base string) string {
-	pkg := strings.TrimSuffix(filepath.Base(os.Args[0]), ".test")
-	pkg = nonWord.ReplaceAllString(pkg, "_")
-	if pkg == "" {
-		return base
-	}
-	name := base + "_" + pkg
-	if len(name) > 63 {
-		name = name[:63]
-	}
-	return name
-}
-
-// DB returns a migrated, empty database dedicated to the calling package.
 func DB(t *testing.T) *gorm.DB {
-	t.Helper()
-	dsn := os.Getenv("TEST_MYSQL_DSN")
-	if dsn == "" {
-		if os.Getenv("TEST_MYSQL") == "" {
-			t.Skip("set TEST_MYSQL=1 (or TEST_MYSQL_DSN) to run database tests")
-		}
-		dsn = defaultDSN
+	db := EmptyDB(t)
+	if e := db.AutoMigrate(domain.AllModels()...); e != nil {
+		t.Fatal(e)
 	}
-	cfg, err := mysql.ParseDSN(dsn)
-	if err != nil {
-		t.Fatalf("parse TEST_MYSQL_DSN: %v", err)
-	}
-	target := dbNameForPackage(cfg.DBName)
-
-	// create the per-package database if it does not exist
-	serverCfg := *cfg
-	serverCfg.DBName = ""
-	admin, err := sql.Open("mysql", serverCfg.FormatDSN())
-	if err != nil {
-		t.Fatalf("connect to mysql: %v", err)
-	}
-	defer admin.Close()
-	if _, err := admin.Exec("CREATE DATABASE IF NOT EXISTS `" + target + "` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci"); err != nil {
-		t.Fatalf("create test database %s: %v", target, err)
-	}
-
-	cfg.DBName = target
-	db, err := gorm.Open(gormmysql.Open(cfg.FormatDSN()), &gorm.Config{
-		Logger:  gormlogger.Default.LogMode(gormlogger.Silent),
-		NowFunc: func() time.Time { return time.Now().UTC() },
-	})
-	if err != nil {
-		t.Fatalf("open %s: %v", target, err)
-	}
-	if err := db.AutoMigrate(domain.AllModels()...); err != nil {
-		t.Fatalf("migrate %s: %v", target, err)
-	}
-	Truncate(t, db)
 	return db
 }
-
+func EmptyDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("设置 TEST_DATABASE_URL 可运行 PostgreSQL 集成测试")
+	}
+	u, e := url.Parse(dsn)
+	if e != nil {
+		t.Fatal("测试数据库地址无效")
+	}
+	if !strings.HasSuffix(u.Path, "_ci") {
+		t.Fatal("测试工具仅允许数据库名称以 _ci 结尾，禁止连接业务库")
+	}
+	root, e := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	if e != nil {
+		t.Fatal(e)
+	}
+	schema := fmt.Sprintf("test_%s_%d", nonWord.ReplaceAllString(t.Name(), "_"), serial.Add(1))
+	if len(schema) > 60 {
+		schema = fmt.Sprintf("test_%d_%d", time.Now().UnixNano(), serial.Add(1))
+	}
+	schema = strings.ToLower(schema)
+	if e = root.Exec(`CREATE SCHEMA "` + schema + `"`).Error; e != nil {
+		t.Fatal(e)
+	}
+	q := u.Query()
+	q.Set("search_path", schema)
+	u.RawQuery = q.Encode()
+	db, e := gorm.Open(postgres.Open(u.String()), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent), NowFunc: func() time.Time { return time.Now().UTC() }})
+	if e != nil {
+		t.Fatal(e)
+	}
+	sqlDB, _ := db.DB()
+	sqlDB.SetMaxOpenConns(8)
+	sqlDB.SetMaxIdleConns(2)
+	t.Cleanup(func() { sqlDB.Close(); root.Exec(`DROP SCHEMA "` + schema + `" CASCADE`); r, _ := root.DB(); r.Close() })
+	return db
+}
 func Truncate(t *testing.T, db *gorm.DB) {
 	t.Helper()
-	db.Exec("SET FOREIGN_KEY_CHECKS = 0")
-	for _, tbl := range []string{"users", "user_identities", "credit_accounts", "credit_ledger", "ad_sessions", "photos",
-		"tasks", "works", "favorites", "shares", "share_opens", "events", "app_configs", "specs", "templates", "categories"} {
-		db.Exec("TRUNCATE TABLE " + tbl)
+	for _, tbl := range []string{"users", "user_identities", "credit_accounts", "credit_ledger", "ad_sessions", "photos", "tasks", "works", "favorites", "shares", "share_opens", "events", "app_configs", "specs", "templates", "categories"} {
+		if e := db.Exec("TRUNCATE TABLE " + tbl + " CASCADE").Error; e != nil {
+			t.Fatal(e)
+		}
 	}
-	db.Exec("SET FOREIGN_KEY_CHECKS = 1")
 }
-
-// Runtime returns a config.Runtime backed by the test DB with the given overrides.
 func Runtime(t *testing.T, db *gorm.DB, overrides map[string]any) *config.Runtime {
 	t.Helper()
 	rt := config.NewRuntime(db, nil)
 	for k, v := range overrides {
-		if err := rt.Set(t.Context(), k, v, "test"); err != nil {
-			t.Fatalf("set config %s: %v", k, err)
+		if e := rt.Set(t.Context(), k, v, "test"); e != nil {
+			t.Fatal(e)
 		}
 	}
 	return rt

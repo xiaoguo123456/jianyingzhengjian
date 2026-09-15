@@ -10,9 +10,10 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	"gorm.io/driver/mysql"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
+	"yingji/backend/internal/pkg/redisx"
 
 	"yingji/backend/internal/config"
 	gmrouter "yingji/backend/internal/engine/genmodel"
@@ -83,16 +84,16 @@ func New(ctx context.Context) (*App, error) {
 	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level}))
 	slog.SetDefault(log)
 
-	db, err := gorm.Open(mysql.Open(cfg.MySQLDSN), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent), NowFunc: func() time.Time { return time.Now().UTC() }})
+	db, err := gorm.Open(postgres.Open(cfg.DatabaseURL), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent), NowFunc: func() time.Time { return time.Now().UTC() }})
 	if err != nil {
-		return nil, fmt.Errorf("mysql: %w", err)
+		return nil, fmt.Errorf("PostgreSQL 连接失败")
 	}
 	sqlDB, _ := db.DB()
-	sqlDB.SetMaxOpenConns(cfg.MySQLMaxOpen)
-	sqlDB.SetMaxIdleConns(cfg.MySQLMaxIdle)
+	sqlDB.SetMaxOpenConns(cfg.DBMaxOpen)
+	sqlDB.SetMaxIdleConns(cfg.DBMaxIdle)
 	sqlDB.SetConnMaxLifetime(time.Hour)
 
-	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr, Password: cfg.RedisPassword, DB: cfg.RedisDB})
+	rdb := redisx.New(cfg)
 	if err := rdb.Ping(ctx).Err(); err != nil {
 		return nil, fmt.Errorf("redis: %w", err)
 	}

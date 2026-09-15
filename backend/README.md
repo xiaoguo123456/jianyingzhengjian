@@ -1,93 +1,42 @@
-> 部署与新增集成以 [部署说明](deploy/README.md) 为准：已加入 NewAPI 图像编辑、阿里云 OSS 和版本化 SQL 迁移。
+# 简影后端（Go）
 
-# 映己 backend (Go)
+Gin + GORM（PostgreSQL 16）+ Redis/Asynq。部署方式、环境地址、模板维护与第三方配置见 [部署说明](deploy/README.md)。
 
-Gin + GORM (MySQL 8) + Redis/Asynq. Architecture: `../docs/BACKEND_ARCHITECTURE.md`; API contract: `../docs/API.md`;
-credit and pipeline rules: `../docs/GENERATION_PIPELINE.md`.
+## 本地运行
 
-## Run locally
+准备 PostgreSQL 和 Redis，复制 `.env.example` 为 `.env`，填写 `DATABASE_URL`、`REDIS_ADDR`。生产和测试复用现有实例，本地可选择 `deploy/docker-compose.yml` 的数据库服务。
 
-Needs MySQL and Redis on localhost. Defaults are in `.env.example`.
-
-```bash
-cp .env.example .env            # set MYSQL_DSN if your MySQL has a password
-go run ./cmd/migrate up         # schema (GORM AutoMigrate in V1, see migrations/README.md)
-go run ./cmd/migrate seed       # catalogue, runtime config, admin user, sample assets
-go run ./cmd/api                # http://localhost:8080
-go run ./cmd/worker             # second terminal
+```sh
+go run ./cmd/migrate up
+go run ./cmd/migrate seed
+go run ./cmd/api
+go run ./cmd/worker
 ```
 
-If port 8080 is taken, set `HTTP_ADDR=:8090` **and** `PUBLIC_BASE_URL=http://localhost:8090` (signed
-URLs for local storage are built from it), and point the client at it with `VITE_API_BASE`.
+API 和 Worker 分别在两个终端启动。开发环境支持模拟视觉、生图与本地存储；测试和生产禁用 `h5_dev` 登录。`seed` 仅用于首次初始化，会覆盖同 ID 的初始模板。
 
-Dev defaults use the `mock` face/matting/gen providers and local disk storage served from `/files/...`,
-so the whole journey works offline: login (`provider: h5_dev`), upload, generate, poll, download,
-recolor, share.
+## 测试
 
-### Smoke test
-
-```bash
-API=http://localhost:8090 bash scripts/smoke.sh
+```sh
+go test ./...
+go vet ./...
+TEST_DATABASE_URL='postgres://账号:密码@127.0.0.1:5432/yingji_ci?sslmode=disable' TEST_REDIS_ADDR=127.0.0.1:6379 go test ./...
 ```
 
-Runs the full journey against a running api + worker: login, privacy consent, catalogue, upload with
-photo check, free ID photo task, download, free recolor, a credit-consuming template task, the
-NO_CREDITS gate, share creation, works summary and admin stats. It is deterministic: it sets the test
-user's balance through the admin API before the credit-gate step.
+数据库测试仅接受名称以 `_ci` 结尾的数据库，每个测试使用独立 schema，结束后删除该 schema。Redis 隔离测试仅接受本地实例，使用 DB 12 和独立前缀，不清空数据库。未提供测试连接时，对应集成测试跳过。CI 使用 PostgreSQL 16 与 Redis 验证积分、任务、迁移及队列隔离。
 
-### Tests
+## 目录
 
-```bash
-go test ./...                   # unit tests; database tests skip themselves
-TEST_MYSQL=1 go test ./...      # adds the credit/task matrix against MySQL (database `yingji_test`)
-```
+- `cmd`：API、Worker、迁移、健康检查、OSS 验收。
+- `internal/domain`：数据模型。
+- `internal/migration/postgres`：版本化 PostgreSQL SQL。
+- `internal/provider`：NewAPI、OSS、微信、视觉等适配器。
+- `internal/pkg/redisx`：缓存与 Asynq 命名空间隔离。
+- `internal/service`：业务服务。
+- `internal/transport`：HTTP 与任务队列。
 
-`TEST_MYSQL_DSN` overrides the server and base database name. Each package gets its own database
-(`yingji_test_credit`, `yingji_test_task`, …) created on demand, because `go test ./...` runs packages
-in parallel and they would otherwise truncate each other's tables. Covered: the credit ledger matrix from
-`../docs/GENERATION_PIPELINE.md` §9 (daily grant and reset, bucket split, idempotent consume and
-refund, ad cap, share reward, admin adjust), task creation (free vs gen, idempotency, breaker,
-timeout, refund-missing, ownership), ID photo crop geometry, AIGC metadata, and the matting keyer.
+## 外部服务
 
-## Layout
+NewAPI 图像编辑和 OSS 已通过真实接口验收。微信与腾讯视觉服务仍需本项目凭据和真实业务验证。生产使用 `FACE_PROVIDER=disabled` 时会拒绝图片处理，配置真实视觉服务后才能开放生成流程。
 
-```
-cmd/              api, worker, migrate
-internal/app      wiring of config, db, redis, storage, providers, engines, services
-internal/domain   models, enums and recipes (GenConfig, CropRule)
-internal/engine   local (imaging), vision (face/matting), genmodel (router: capabilities, breakers, fallback)
-internal/pipeline idphoto, template, poster, shared steps
-internal/provider storage (local, cos), wechat, face, matting, genmodel (mock, volcengine), tencentcloud (TC3 signer)
-internal/service  credit (ledger), auth, ads, catalogue, photo, task, work, favorite, share, event, notify, profile, admin
-internal/transport http (public, admin, hooks, middleware, dto), queue (asynq handlers + scheduler)
-internal/seed     initial data — spec sizes marked 示例数据 must be verified before production
-internal/testutil MySQL test harness
-testdata/         fixtures for the smoke test (upscaled and sharpened from the mockup crops)
-```
-
-## Providers
-
-| Env | Dev default | Production |
-|---|---|---|
-| `FACE_PROVIDER` | `mock` | `tencent` (iai DetectFace/CompareFace, bda SegmentPortraitPic) |
-| `GEN_PROVIDER_DEFAULT` | `mock` | `volcengine` (Ark Seedream) |
-| `STORAGE_DRIVER` | `local` | `cos` |
-
-Only the `mock` providers and local storage have been exercised end to end. The Tencent, Volcengine,
-COS and WeChat adapters compile but have never been called against the live APIs — treat their request
-shapes as unverified and check them against current provider documentation before switching over.
-
-The `mock` matting provider is a background-colour keyer (border-seeded flood fill with a local
-gradient constraint), not a segmentation model. It works on ID-photo-style shots with an even backdrop
-and falls back to keeping the whole frame when keying fails. Production uses a real segmentation API.
-
-`POSTER_FONT_PATH` must point at a CJK font (`.ttf`, `.otf` or `.ttc`) for the visible "AI生成" label
-and poster text. On macOS, `/System/Library/Fonts/Supplemental/Songti.ttc` works. Without it the label
-falls back to a text-free marker, which does not satisfy the labelling rules in `../docs/COMPLIANCE.md`.
-
-## Admin
-
-`POST /admin/v1/auth/login` with `ADMIN_INIT_USER` / `ADMIN_INIT_PASSWORD` (seeded on first run).
-Resources: `categories`, `specs`, `templates`, `collections`, `banners` via `GET/POST /admin/v1/{resource}`
-and `DELETE /admin/v1/{resource}/{id}`. Template writes are validated against provider capabilities and
-the banned-word list before they are saved.
+海报字体通过 `POSTER_FONT_PATH` 配置，必须为可读取的中文字体文件。

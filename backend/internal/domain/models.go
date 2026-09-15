@@ -11,12 +11,12 @@ type User struct {
 	Nickname        *string    `gorm:"size:64" json:"nickname"`
 	AvatarKey       *string    `gorm:"size:255" json:"avatar_key"`
 	Status          int8       `gorm:"default:1" json:"status"`
-	PrivacyAgreedAt *time.Time `gorm:"type:datetime(3)" json:"privacy_agreed_at"`
+	PrivacyAgreedAt *time.Time `gorm:"type:timestamptz(3)" json:"privacy_agreed_at"`
 	PrivacyVersion  *string    `gorm:"size:32" json:"privacy_version"`
 	AcquiredShareID *string    `gorm:"size:26" json:"acquired_share_id"`
-	LastLoginAt     time.Time  `gorm:"type:datetime(3)" json:"last_login_at"`
-	CreatedAt       time.Time  `gorm:"type:datetime(3)" json:"created_at"`
-	UpdatedAt       time.Time  `gorm:"type:datetime(3)" json:"updated_at"`
+	LastLoginAt     time.Time  `gorm:"type:timestamptz(3)" json:"last_login_at"`
+	CreatedAt       time.Time  `gorm:"type:timestamptz(3)" json:"created_at"`
+	UpdatedAt       time.Time  `gorm:"type:timestamptz(3)" json:"updated_at"`
 }
 
 type UserIdentity struct {
@@ -25,7 +25,7 @@ type UserIdentity struct {
 	Provider    string    `gorm:"size:16;uniqueIndex:uk_provider_uid" json:"provider"`
 	ProviderUID string    `gorm:"size:64;uniqueIndex:uk_provider_uid" json:"provider_uid"`
 	UnionID     *string   `gorm:"size:64;index" json:"union_id"`
-	CreatedAt   time.Time `gorm:"type:datetime(3)" json:"created_at"`
+	CreatedAt   time.Time `gorm:"type:timestamptz(3)" json:"created_at"`
 }
 
 type CreditAccount struct {
@@ -34,7 +34,7 @@ type CreditAccount struct {
 	DailyResetDate     time.Time `gorm:"type:date" json:"daily_reset_date"`
 	BonusCredits       uint      `gorm:"not null" json:"bonus_credits"`
 	AdRewardsToday     uint      `gorm:"not null" json:"ad_rewards_today"`
-	UpdatedAt          time.Time `gorm:"type:datetime(3)" json:"updated_at"`
+	UpdatedAt          time.Time `gorm:"type:timestamptz(3)" json:"updated_at"`
 }
 
 type CreditLedger struct {
@@ -48,7 +48,7 @@ type CreditLedger struct {
 	RefType           string     `gorm:"size:32;uniqueIndex:uk_ledger_ref" json:"ref_type"`
 	RefID             string     `gorm:"size:64;uniqueIndex:uk_ledger_ref" json:"ref_id"`
 	Note              *string    `gorm:"size:255" json:"note"`
-	CreatedAt         time.Time  `gorm:"type:datetime(3)" json:"created_at"`
+	CreatedAt         time.Time  `gorm:"type:timestamptz(3)" json:"created_at"`
 }
 
 func (CreditLedger) TableName() string { return "credit_ledger" }
@@ -60,10 +60,10 @@ type AdSession struct {
 	Status           AdSessionStatus `gorm:"size:16" json:"status"`
 	RejectReason     *string         `gorm:"size:64" json:"reject_reason"`
 	ClientIsEnded    *bool           `json:"client_is_ended"`
-	ServerVerifiedAt *time.Time      `gorm:"type:datetime(3)" json:"server_verified_at"`
+	ServerVerifiedAt *time.Time      `gorm:"type:timestamptz(3)" json:"server_verified_at"`
 	TransID          *string         `gorm:"size:128;uniqueIndex" json:"trans_id"`
-	CreatedAt        time.Time       `gorm:"type:datetime(3)" json:"created_at"`
-	ClaimedAt        *time.Time      `gorm:"type:datetime(3)" json:"claimed_at"`
+	CreatedAt        time.Time       `gorm:"type:timestamptz(3)" json:"created_at"`
+	ClaimedAt        *time.Time      `gorm:"type:timestamptz(3)" json:"claimed_at"`
 }
 
 type Photo struct {
@@ -77,9 +77,9 @@ type Photo struct {
 	CheckStatus      CheckStatus      `gorm:"size:16" json:"check_status"`
 	CheckResult      JSON             `gorm:"type:json" json:"check_result"`
 	ModerationStatus ModerationStatus `gorm:"size:16;default:pending" json:"moderation_status"`
-	ExpiresAt        time.Time        `gorm:"type:datetime(3)" json:"expires_at"`
-	CreatedAt        time.Time        `gorm:"type:datetime(3)" json:"created_at"`
-	DeletedAt        gorm.DeletedAt   `gorm:"type:datetime(3);index" json:"deleted_at"`
+	ExpiresAt        time.Time        `gorm:"type:timestamptz(3)" json:"expires_at"`
+	CreatedAt        time.Time        `gorm:"type:timestamptz(3)" json:"created_at"`
+	DeletedAt        gorm.DeletedAt   `gorm:"type:timestamptz(3);index" json:"deleted_at"`
 }
 
 type Category struct {
@@ -111,8 +111,8 @@ type Spec struct {
 	IsHot      bool      `gorm:"default:false" json:"is_hot"`
 	Sort       int       `gorm:"default:0" json:"sort"`
 	Status     int8      `gorm:"default:1" json:"status"`
-	CreatedAt  time.Time `gorm:"type:datetime(3)" json:"created_at"`
-	UpdatedAt  time.Time `gorm:"type:datetime(3)" json:"updated_at"`
+	CreatedAt  time.Time `gorm:"type:timestamptz(3)" json:"created_at"`
+	UpdatedAt  time.Time `gorm:"type:timestamptz(3)" json:"updated_at"`
 }
 
 type Template struct {
@@ -129,8 +129,8 @@ type Template struct {
 	IsHot      bool      `gorm:"default:false;index:idx_tpl_list,priority:3" json:"is_hot"`
 	Sort       int       `gorm:"default:0;index:idx_tpl_list,priority:4" json:"sort"`
 	Status     int8      `gorm:"default:1;index:idx_tpl_list,priority:2" json:"status"`
-	CreatedAt  time.Time `gorm:"type:datetime(3)" json:"created_at"`
-	UpdatedAt  time.Time `gorm:"type:datetime(3)" json:"updated_at"`
+	CreatedAt  time.Time `gorm:"type:timestamptz(3)" json:"created_at"`
+	UpdatedAt  time.Time `gorm:"type:timestamptz(3)" json:"updated_at"`
 }
 
 type Collection struct {
@@ -158,8 +158,8 @@ type Banner struct {
 	Link     JSON       `gorm:"type:json" json:"link"`
 	Sort     int        `gorm:"default:0" json:"sort"`
 	Status   int8       `gorm:"default:1" json:"status"`
-	StartAt  *time.Time `gorm:"type:datetime(3)" json:"start_at"`
-	EndAt    *time.Time `gorm:"type:datetime(3)" json:"end_at"`
+	StartAt  *time.Time `gorm:"type:timestamptz(3)" json:"start_at"`
+	EndAt    *time.Time `gorm:"type:timestamptz(3)" json:"end_at"`
 }
 
 type Task struct {
@@ -186,9 +186,9 @@ type Task struct {
 	ConsumeLedgerID *string    `gorm:"size:26" json:"consume_ledger_id"`
 	RefundLedgerID  *string    `gorm:"size:26" json:"refund_ledger_id"`
 	NotifyRequested bool       `gorm:"default:false" json:"notify_requested"`
-	CreatedAt       time.Time  `gorm:"type:datetime(3);index:idx_task_user,priority:2" json:"created_at"`
-	StartedAt       *time.Time `gorm:"type:datetime(3);index:idx_task_status,priority:2" json:"started_at"`
-	FinishedAt      *time.Time `gorm:"type:datetime(3)" json:"finished_at"`
+	CreatedAt       time.Time  `gorm:"type:timestamptz(3);index:idx_task_user,priority:2" json:"created_at"`
+	StartedAt       *time.Time `gorm:"type:timestamptz(3);index:idx_task_status,priority:2" json:"started_at"`
+	FinishedAt      *time.Time `gorm:"type:timestamptz(3)" json:"finished_at"`
 }
 
 type Work struct {
@@ -206,14 +206,14 @@ type Work struct {
 	Meta             JSON             `gorm:"type:json" json:"meta"`
 	AILabel          bool             `gorm:"default:false" json:"ai_label"`
 	ModerationStatus ModerationStatus `gorm:"size:16;default:pending" json:"moderation_status"`
-	CreatedAt        time.Time        `gorm:"type:datetime(3)" json:"created_at"`
-	DeletedAt        gorm.DeletedAt   `gorm:"type:datetime(3);index" json:"deleted_at"`
+	CreatedAt        time.Time        `gorm:"type:timestamptz(3)" json:"created_at"`
+	DeletedAt        gorm.DeletedAt   `gorm:"type:timestamptz(3);index" json:"deleted_at"`
 }
 
 type Favorite struct {
 	UserID     string    `gorm:"primaryKey;size:26" json:"user_id"`
 	TemplateID string    `gorm:"primaryKey;size:26" json:"template_id"`
-	CreatedAt  time.Time `gorm:"type:datetime(3)" json:"created_at"`
+	CreatedAt  time.Time `gorm:"type:timestamptz(3)" json:"created_at"`
 }
 
 type Share struct {
@@ -230,8 +230,8 @@ type Share struct {
 	Title        string     `gorm:"size:128" json:"title"`
 	Status       string     `gorm:"size:16;default:active" json:"status"`
 	Opens        uint       `gorm:"default:0" json:"opens"`
-	LastOpenedAt *time.Time `gorm:"type:datetime(3)" json:"last_opened_at"`
-	CreatedAt    time.Time  `gorm:"type:datetime(3)" json:"created_at"`
+	LastOpenedAt *time.Time `gorm:"type:timestamptz(3)" json:"last_opened_at"`
+	CreatedAt    time.Time  `gorm:"type:timestamptz(3)" json:"created_at"`
 }
 
 type ShareOpen struct {
@@ -240,7 +240,7 @@ type ShareOpen struct {
 	OpenerUserID *string   `gorm:"size:26" json:"opener_user_id"`
 	DeviceID     *string   `gorm:"size:64;index" json:"device_id"`
 	Platform     string    `gorm:"size:16" json:"platform"`
-	CreatedAt    time.Time `gorm:"type:datetime(3)" json:"created_at"`
+	CreatedAt    time.Time `gorm:"type:timestamptz(3)" json:"created_at"`
 }
 
 type Event struct {
@@ -248,8 +248,8 @@ type Event struct {
 	UserID    *string    `gorm:"size:26" json:"user_id"`
 	Name      string     `gorm:"size:48;index:idx_event_name,priority:1" json:"name"`
 	Props     JSON       `gorm:"type:json" json:"props"`
-	ClientTS  *time.Time `gorm:"type:datetime(3)" json:"client_ts"`
-	CreatedAt time.Time  `gorm:"type:datetime(3);index:idx_event_name,priority:2" json:"created_at"`
+	ClientTS  *time.Time `gorm:"type:timestamptz(3)" json:"client_ts"`
+	CreatedAt time.Time  `gorm:"type:timestamptz(3);index:idx_event_name,priority:2" json:"created_at"`
 }
 
 type AppConfig struct {
@@ -257,7 +257,7 @@ type AppConfig struct {
 	Value       JSON      `gorm:"type:json" json:"value"`
 	Description *string   `gorm:"size:255" json:"description"`
 	UpdatedBy   *string   `gorm:"size:64" json:"updated_by"`
-	UpdatedAt   time.Time `gorm:"type:datetime(3)" json:"updated_at"`
+	UpdatedAt   time.Time `gorm:"type:timestamptz(3)" json:"updated_at"`
 }
 
 type AdminUser struct {
@@ -266,8 +266,8 @@ type AdminUser struct {
 	PasswordHash string     `gorm:"size:255" json:"-"` // never serialised
 	Role         string     `gorm:"size:16;default:admin" json:"role"`
 	Status       int8       `gorm:"default:1" json:"status"`
-	LastLoginAt  *time.Time `gorm:"type:datetime(3)" json:"last_login_at"`
-	CreatedAt    time.Time  `gorm:"type:datetime(3)" json:"created_at"`
+	LastLoginAt  *time.Time `gorm:"type:timestamptz(3)" json:"last_login_at"`
+	CreatedAt    time.Time  `gorm:"type:timestamptz(3)" json:"created_at"`
 }
 
 type AuditLog struct {
@@ -279,7 +279,7 @@ type AuditLog struct {
 	Before     JSON      `gorm:"type:json" json:"before"`
 	After      JSON      `gorm:"type:json" json:"after"`
 	IP         string    `gorm:"size:64" json:"ip"`
-	CreatedAt  time.Time `gorm:"type:datetime(3)" json:"created_at"`
+	CreatedAt  time.Time `gorm:"type:timestamptz(3)" json:"created_at"`
 }
 
 type DailyStat struct {

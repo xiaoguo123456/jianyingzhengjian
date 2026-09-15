@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 	"yingji/backend/internal/config"
+	"yingji/backend/internal/pkg/redisx"
 )
 
 func main() {
@@ -14,7 +15,7 @@ func main() {
 		if e != nil {
 			os.Exit(1)
 		}
-		i := asynq.NewInspector(asynq.RedisClientOpt{Addr: c.RedisAddr, Password: c.RedisPassword, DB: c.RedisDB})
+		i := asynq.NewInspector(redisx.QueueOpt{Cfg: c})
 		defer i.Close()
 		servers, e := i.Servers()
 		if e != nil {

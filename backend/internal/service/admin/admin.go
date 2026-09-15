@@ -117,7 +117,7 @@ func (s *Service) Upsert(ctx context.Context, resource string, body json.RawMess
 		}
 		if m.IsHot {
 			var n int64
-			s.db.WithContext(ctx).Model(&domain.Spec{}).Where("is_hot = 1 AND id <> ?", m.ID).Count(&n)
+			s.db.WithContext(ctx).Model(&domain.Spec{}).Where("is_hot = true AND id <> ?", m.ID).Count(&n)
 			if n >= 4 {
 				return nil, apperr.BadRequest("常用规格最多 4 个")
 			}
@@ -275,7 +275,7 @@ func (s *Service) Funnel(ctx context.Context, from, to time.Time, module string)
 	for _, n := range names {
 		q := s.db.WithContext(ctx).Model(&domain.Event{}).Where("name = ? AND created_at >= ? AND created_at < ?", n, from, to)
 		if module != "" {
-			q = q.Where("JSON_EXTRACT(props, '$.module') = ?", module)
+			q = q.Where("props->>'module' = ?", module)
 		}
 		var c int64
 		q.Count(&c)
@@ -298,7 +298,7 @@ type TemplateStat struct {
 func (s *Service) TemplateStats(ctx context.Context, from, to time.Time) ([]TemplateStat, error) {
 	var rows []TemplateStat
 	err := s.db.WithContext(ctx).Raw(`SELECT t.template_id, tp.name, t.module,
-		COUNT(*) AS tasks, SUM(t.status='success') AS success, SUM(t.status='failed') AS failed, COALESCE(SUM(t.cost_cents),0) AS cost_cents
+		COUNT(*) AS tasks, SUM(CASE WHEN t.status='success' THEN 1 ELSE 0 END) AS success, SUM(CASE WHEN t.status='failed' THEN 1 ELSE 0 END) AS failed, COALESCE(SUM(t.cost_cents),0) AS cost_cents
 		FROM tasks t LEFT JOIN templates tp ON tp.id = t.template_id
 		WHERE t.template_id IS NOT NULL AND t.created_at >= ? AND t.created_at < ?
 		GROUP BY t.template_id, tp.name, t.module ORDER BY tasks DESC`, from, to).Scan(&rows).Error

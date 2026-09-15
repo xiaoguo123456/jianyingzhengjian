@@ -19,9 +19,11 @@
 4. 测试使用 `DEPLOY_ENV=test`、`APP_ENV=staging`、端口 `8013`、网络 `weishen-test_default`；生产使用 `DEPLOY_ENV=production`、`APP_ENV=prod`、端口 `8014`、网络 `weishen-prod_default`。
 5. 为现有网关增加 `gateway/` 中对应的简影路由。Nginx 校验成功后重载，保留所有现有路由。测试网关由花花狗项目管理，后续发布必须保留此路由。
 
-每个环境独立运行 MySQL、Redis、API、Worker，不复用其他项目的数据库账号或 Redis 队列。数据库不开放主机端口。MySQL 缓冲池 64 MB，生图并发为 1；API/Worker 分别限制 128/384 MB。发布检查数据库、Redis、API 就绪及 Worker 的 Asynq 心跳。
+服务器仅运行简影 API、Worker，复用现有 PostgreSQL 16 与 Redis 实例，不部署数据库容器。测试数据库 `yingji_test`、账号 `yingji_test_app`；生产数据库 `yingji_prod`、账号 `yingji_prod_app`。Redis 测试 DB 5、前缀 `yingji:test:`；生产 DB 6、前缀 `yingji:prod:`。缓存、Asynq 内部队列键及订阅频道均加前缀。禁止清空共享 Redis 或扫描删除其他项目前缀。
 
-首次发布执行版本化 SQL 和初始模板导入；后续只执行新 SQL，不覆盖后台已编辑的模板。SQL 文件嵌入二进制，保留版本校验和与失败标记。首次迁移失败需人工核对，不能通过删除迁移记录盲目重试。
+数据库每进程最多 2 个连接、空闲连接 0；生图并发 1，API/Worker 分别限制 128/384 MB。现有 RDS 未启用 SSL，通过同 VPC 内网以 `sslmode=disable` 连接。发布检查数据库、Redis、API 就绪及 Worker 心跳。
+
+首次发布执行版本化 SQL 和初始模板导入；后续只执行新 SQL，不覆盖后台已编辑的模板。SQL 文件位于 `internal/migration/postgres` 并嵌入二进制，每个版本在事务中执行，校验历史摘要并使用数据库迁移锁。失败会回滚该版本 DDL。`.initialized-postgres` 标记该环境已导入初始数据。
 
 ## 接口与存储
 
@@ -46,4 +48,6 @@ cd /opt/yingji-test
 bash scripts/rollback.sh
 ```
 
-生产对应 `/opt/yingji-production`。回滚只恢复应用镜像，不恢复数据库；数据库变更应向后兼容。数据保存在环境目录的 `data/` 下，不执行 `docker compose down -v`。后续需将 MySQL 定期备份接入现有运维备份体系，应用镜像不能替代数据备份。
+生产对应 `/opt/yingji-production`。回滚只恢复应用镜像，不恢复数据库；数据库变更应向后兼容。数据库备份由现有 RDS 运维体系负责，应用镜像不能替代数据备份。首次从 MySQL 切换后不允许普通镜像回滚到旧引擎版本；原 MySQL 数据目录保留用于核对。
+
+本地 `.env.deploy.local` 用于填写两套连接凭据，已被 Git 忽略。同步到服务器 `.env.next`（600）后，下次发布切换配置；失败自动恢复发布前 `.env`。发布前配置备份位于该次 release 的 `env.before`，权限 600，勿对外提供。

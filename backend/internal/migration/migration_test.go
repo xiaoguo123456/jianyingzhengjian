@@ -20,3 +20,23 @@ func TestMigrationRejectsUnversionedExistingSchema(t *testing.T) {
 		t.Fatal("不应自动重试失败的 DDL")
 	}
 }
+
+func TestMigrationFreshAndRepeat(t *testing.T) {
+	db := testutil.EmptyDB(t)
+	conn, _ := db.DB()
+	for i := 0; i < 2; i++ {
+		if err := Up(t.Context(), conn); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var count int64
+	if err := db.Table("templates").Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("UPDATE schema_migrations SET checksum='tampered'").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := Up(t.Context(), conn); err == nil {
+		t.Fatal("必须拒绝被修改的历史迁移")
+	}
+}

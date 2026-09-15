@@ -18,8 +18,10 @@ type Config struct {
 	LogLevel      string `env:"LOG_LEVEL" envDefault:"info"`
 	CORSOrigins   string `env:"CORS_ORIGINS" envDefault:"http://localhost:5173,http://localhost:5174,http://localhost:5175"`
 
-	MySQLDSN      string `env:"MYSQL_DSN" envDefault:"root:@tcp(127.0.0.1:3306)/yingji?parseTime=true&loc=UTC&charset=utf8mb4"`
+	DatabaseURL   string `env:"DATABASE_URL" envDefault:"postgres://localhost:5432/yingji?sslmode=disable"`
 	RedisAddr     string `env:"REDIS_ADDR" envDefault:"127.0.0.1:6379"`
+	RedisUsername string `env:"REDIS_USERNAME"`
+	RedisPrefix   string `env:"REDIS_PREFIX" envDefault:"yingji:dev:"`
 	RedisPassword string `env:"REDIS_PASSWORD" envDefault:""`
 	RedisDB       int    `env:"REDIS_DB" envDefault:"0"`
 
@@ -42,8 +44,8 @@ type Config struct {
 	OSSPublicEndpoint  string `env:"OSS_PUBLIC_ENDPOINT"`
 	OSSAccessKeyID     string `env:"OSS_ACCESS_KEY_ID"`
 	OSSAccessKeySecret string `env:"OSS_ACCESS_KEY_SECRET"`
-	MySQLMaxOpen       int    `env:"MYSQL_MAX_OPEN" envDefault:"5"`
-	MySQLMaxIdle       int    `env:"MYSQL_MAX_IDLE" envDefault:"1"`
+	DBMaxOpen          int    `env:"DB_MAX_OPEN" envDefault:"2"`
+	DBMaxIdle          int    `env:"DB_MAX_IDLE" envDefault:"0"`
 	NewAPIKey          string `env:"NEWAPI_API_KEY"`
 	NewAPIBaseURL      string `env:"NEWAPI_BASE_URL" envDefault:"https://www.ggwk1.online/v1"`
 	NewAPIModel        string `env:"NEWAPI_MODEL" envDefault:"gpt-image-2.5"`
@@ -102,6 +104,10 @@ func (c *Config) CORSList() []string {
 
 // Validate 在启动时拒绝配置拼写错误和生产环境的开发凭据。
 func (c *Config) Validate() error {
+	if !strings.HasPrefix(c.RedisPrefix, "yingji:") || !strings.HasSuffix(c.RedisPrefix, ":") || strings.ContainsAny(c.RedisPrefix, " *?[]{}\\\t\n") {
+		return fmt.Errorf("Redis 前缀必须为 yingji:环境:")
+	}
+
 	switch c.StorageDriver {
 	case "local", "cos", "oss":
 	default:
@@ -123,7 +129,7 @@ func (c *Config) Validate() error {
 	if c.FaceProvider == "tencent" && (c.TencentSecretID == "" || c.TencentSecretKey == "") {
 		return fmt.Errorf("缺少腾讯视觉服务凭据")
 	}
-	if c.GenConcurrency < 1 || c.MySQLMaxOpen < 1 || c.MySQLMaxIdle < 0 || c.MySQLMaxIdle > c.MySQLMaxOpen {
+	if c.GenConcurrency < 1 || c.DBMaxOpen < 1 || c.DBMaxIdle < 0 || c.DBMaxIdle > c.DBMaxOpen {
 		return fmt.Errorf("并发或连接池配置无效")
 	}
 	if c.IsProd() {

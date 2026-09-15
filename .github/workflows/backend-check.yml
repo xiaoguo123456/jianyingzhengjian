@@ -9,14 +9,14 @@ jobs:
   check:
     runs-on: ubuntu-latest
     services:
-      mysql:
-        image: mysql:8.4
+      postgres:
+        image: postgres:16
         env:
-          MYSQL_ROOT_PASSWORD: ci-only
-          MYSQL_DATABASE: yingji_ci
-        ports: ['3306:3306']
+          POSTGRES_PASSWORD: ci-only
+          POSTGRES_DB: yingji_ci
+        ports: ['5432:5432']
         options: >-
-          --health-cmd="mysqladmin ping -pci-only"
+          --health-cmd="pg_isready -U postgres -d yingji_ci"
           --health-interval=10s --health-timeout=5s --health-retries=30
       redis:
         image: redis:7-alpine
@@ -25,8 +25,9 @@ jobs:
       run:
         working-directory: backend
     env:
-      MYSQL_DSN: 'root:ci-only@tcp(127.0.0.1:3306)/yingji_ci?parseTime=true&loc=UTC&charset=utf8mb4'
-      TEST_MYSQL_DSN: 'root:ci-only@tcp(127.0.0.1:3306)/yingji_ci?parseTime=true&loc=UTC&charset=utf8mb4'
+      DATABASE_URL: 'postgres://postgres:ci-only@127.0.0.1:5432/yingji_ci?sslmode=disable'
+      TEST_DATABASE_URL: 'postgres://postgres:ci-only@127.0.0.1:5432/yingji_ci?sslmode=disable'
+      TEST_REDIS_ADDR: '127.0.0.1:6379'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
