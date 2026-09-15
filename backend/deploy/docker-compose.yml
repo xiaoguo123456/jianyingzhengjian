@@ -1,0 +1,41 @@
+# Dev / staging stack: mysql, redis, api, worker, asynqmon.
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: yingji
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_0900_ai_ci
+    ports: ["3306:3306"]
+    volumes: [mysql-data:/var/lib/mysql]
+  redis:
+    image: redis:7
+    command: redis-server --appendonly yes
+    ports: ["6379:6379"]
+  api:
+    build: { context: .., dockerfile: deploy/Dockerfile.api }
+    env_file: ../.env
+    environment:
+      MYSQL_DSN: root:root@tcp(mysql:3306)/yingji?parseTime=true&loc=UTC&charset=utf8mb4
+      REDIS_ADDR: redis:6379
+      LOCAL_STORAGE_DIR: /data/objects
+    ports: ["8080:8080"]
+    volumes: [objects:/data/objects]
+    depends_on: [mysql, redis]
+  worker:
+    build: { context: .., dockerfile: deploy/Dockerfile.worker }
+    env_file: ../.env
+    environment:
+      MYSQL_DSN: root:root@tcp(mysql:3306)/yingji?parseTime=true&loc=UTC&charset=utf8mb4
+      REDIS_ADDR: redis:6379
+      LOCAL_STORAGE_DIR: /data/objects
+    volumes: [objects:/data/objects]
+    depends_on: [mysql, redis]
+  asynqmon:
+    image: hibiken/asynqmon
+    command: --redis-addr=redis:6379
+    ports: ["8081:8080"]
+    depends_on: [redis]
+volumes:
+  mysql-data: {}
+  objects: {}

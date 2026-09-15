@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "client-h5",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "cd client && VITE_DEV_PORT=5174 pnpm dev:h5"
+      ],
+      "port": 5174
+    },
+    {
+      "name": "client-h5-live",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "cd client && VITE_USE_MOCK=false VITE_API_BASE=http://localhost:8090 VITE_DEV_PORT=5175 pnpm dev:h5"
+      ],
+      "port": 5175
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+# OS / editors
+.DS_Store
+.idea/
+*.swp
+
+# Dependencies and build output
+node_modules/
+client/dist/
+client/unpackage/
+backend/dist/
+backend/bin/
+coverage/
+*.log
+
+# Local config and secrets (templates like .env.example stay tracked)
+.env
+.env.*
+!.env.example
+*.local
+
+# Local runtime data (uploaded photos, generated works)
+backend/data/
+
+# Claude Code per-user settings
+.claude/settings.local.json

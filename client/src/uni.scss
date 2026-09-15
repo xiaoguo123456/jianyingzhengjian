@@ -1,0 +1,48 @@
+/* Design tokens — mirror of docs/DESIGN_SYSTEM.md §2 (SCSS side).
+   CSS custom properties with the same values are declared in App.vue. */
+
+$color-primary: #2F7BF6;
+$color-primary-strong: #1F66E0;
+$color-primary-soft: #E8F1FF;
+$color-primary-tint: #F2F7FF;
+$gradient-primary: linear-gradient(90deg, #3A8DFF 0%, #35C3E6 100%);
+$gradient-banner: linear-gradient(135deg, #DCEBFF 0%, #EAF3FF 60%, #FFFFFF 100%);
+
+$color-bg: #F2F4F8;
+$color-surface: #FFFFFF;
+$color-border: #E6ECF5;
+$color-text: #111827;
+$color-text-2: #4B5563;
+$color-text-3: #8A94A6;
+$color-success: #22C55E;
+$color-warning: #F59E0B;
+$color-danger: #EF4444;
+$color-mask: rgba(17, 24, 39, 0.45);
+$tab-inactive: #6B7280;
+
+$font-display: 56rpx;
+$font-h1: 40rpx;
+$font-h2: 34rpx;
+$font-body-strong: 30rpx;
+$font-body: 28rpx;
+$font-caption: 24rpx;
+
+$space-1: 8rpx;
+$space-2: 16rpx;
+$space-3: 24rpx;
+$space-4: 32rpx;
+$space-5: 48rpx;
+$space-6: 64rpx;
+
+$radius-sm: 16rpx;
+$radius-md: 24rpx;
+$radius-lg: 32rpx;
+$radius-pill: 999rpx;
+
+$shadow-card: 0 4rpx 16rpx rgba(47, 123, 246, 0.06);
+$shadow-sheet: 0 -8rpx 32rpx rgba(17, 24, 39, 0.08);
+
+/* legacy uni variables some plugins expect */
+$uni-color-primary: $color-primary;
+$uni-bg-color: $color-surface;
+$uni-text-color: $color-text;

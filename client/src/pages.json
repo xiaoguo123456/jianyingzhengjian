@@ -1,0 +1,61 @@
+{
+  "easycom": {
+    "autoscan": true,
+    "custom": {
+      "^y-(.*)": "@/components/y-$1/y-$1.vue"
+    }
+  },
+  "pages": [
+    { "path": "pages/idphoto/index", "style": { "navigationStyle": "custom", "navigationBarTitleText": "证件照" } },
+    { "path": "pages/pro/index", "style": { "navigationStyle": "custom", "navigationBarTitleText": "职业照" } },
+    { "path": "pages/portrait/index", "style": { "navigationStyle": "custom", "navigationBarTitleText": "写真" } },
+    { "path": "pages/mine/index", "style": { "navigationStyle": "custom", "navigationBarTitleText": "我的" } },
+    { "path": "pages/spec-library/index", "style": { "navigationBarTitleText": "证件照规格" } },
+    { "path": "pages/template-list/index", "style": { "navigationBarTitleText": "模板" } },
+    { "path": "pages/template-detail/index", "style": { "navigationBarTitleText": "模板详情" } },
+    { "path": "pages/upload/index", "style": { "navigationBarTitleText": "上传照片" } },
+    { "path": "pages/idphoto-params/index", "style": { "navigationBarTitleText": "参数设置" } },
+    { "path": "pages/confirm/index", "style": { "navigationBarTitleText": "确认生成" } },
+    { "path": "pages/generating/index", "style": { "navigationBarTitleText": "正在生成" } },
+    { "path": "pages/result/index", "style": { "navigationBarTitleText": "生成结果" } },
+    { "path": "pages/webview/index", "style": { "navigationBarTitleText": "" } }
+  ],
+  "subPackages": [
+    {
+      "root": "pages-mine",
+      "pages": [
+        { "path": "works/index", "style": { "navigationBarTitleText": "我的作品" } },
+        { "path": "work-detail/index", "style": { "navigationBarTitleText": "作品详情" } },
+        { "path": "records/index", "style": { "navigationBarTitleText": "生成记录" } },
+        { "path": "favorites/index", "style": { "navigationBarTitleText": "收藏模板" } },
+        { "path": "photos/index", "style": { "navigationBarTitleText": "照片管理" } },
+        { "path": "credits/index", "style": { "navigationBarTitleText": "生成次数" } },
+        { "path": "profile-edit/index", "style": { "navigationBarTitleText": "编辑资料" } },
+        { "path": "settings/index", "style": { "navigationBarTitleText": "设置" } }
+      ]
+    }
+  ],
+  "preloadRule": {
+    "pages/mine/index": { "network": "all", "packages": ["pages-mine"] }
+  },
+  "tabBar": {
+    "color": "#6B7280",
+    "selectedColor": "#2F7BF6",
+    "backgroundColor": "#FFFFFF",
+    "borderStyle": "white",
+    "list": [
+      { "pagePath": "pages/idphoto/index", "text": "证件照", "iconPath": "static/tabbar/idphoto.png", "selectedIconPath": "static/tabbar/idphoto-active.png" },
+      { "pagePath": "pages/pro/index", "text": "职业照", "iconPath": "static/tabbar/pro.png", "selectedIconPath": "static/tabbar/pro-active.png" },
+      { "pagePath": "pages/portrait/index", "text": "写真", "iconPath": "static/tabbar/portrait.png", "selectedIconPath": "static/tabbar/portrait-active.png" },
+      { "pagePath": "pages/mine/index", "text": "我的", "iconPath": "static/tabbar/mine.png", "selectedIconPath": "static/tabbar/mine-active.png" }
+    ]
+  },
+  "globalStyle": {
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "映己",
+    "navigationBarBackgroundColor": "#FFFFFF",
+    "backgroundColor": "#F2F4F8",
+    "backgroundColorTop": "#F2F4F8",
+    "backgroundColorBottom": "#F2F4F8"
+  }
+}

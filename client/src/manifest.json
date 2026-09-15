@@ -1,0 +1,46 @@
+{
+  "name": "映己证件照写真馆",
+  "appid": "",
+  "description": "上传自拍，生成证件照、职业照、写真和头像",
+  "versionName": "0.1.0",
+  "versionCode": "1",
+  "transformPx": false,
+  "app-plus": {
+    "usingComponents": true,
+    "nvueStyleCompiler": "uni-app",
+    "compilerVersion": 3,
+    "splashscreen": { "alwaysShowBeforeRender": true, "waiting": true, "autoclose": true, "delay": 0 },
+    "modules": {},
+    "distribute": {
+      "android": {
+        "permissions": [
+          "<uses-permission android:name=\"android.permission.CAMERA\"/>",
+          "<uses-permission android:name=\"android.permission.ACCESS_NETWORK_STATE\"/>",
+          "<uses-permission android:name=\"android.permission.WRITE_EXTERNAL_STORAGE\"/>"
+        ]
+      },
+      "ios": {},
+      "sdkConfigs": {}
+    }
+  },
+  "mp-weixin": {
+    "appid": "wxf7e44a53b66d4a43",
+    "setting": {
+      "urlCheck": false,
+      "es6": true,
+      "minified": true,
+      "postcss": true
+    },
+    "usingComponents": true,
+    "lazyCodeLoading": "requiredComponents",
+    "__usePrivacyCheck__": true,
+    "requiredPrivateInfos": []
+  },
+  "h5": {
+    "title": "映己",
+    "router": { "mode": "hash", "base": "/" },
+    "optimization": { "treeShaking": { "enable": true } }
+  },
+  "uniStatistics": { "enable": false },
+  "vueVersion": "3"
+}
