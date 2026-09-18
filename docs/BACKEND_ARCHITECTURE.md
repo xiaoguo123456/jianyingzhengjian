@@ -155,10 +155,10 @@ Asynq task types:
 | `notify:task-finished` | `default` | 30 s | 3 | none |
 | `photo:cleanup` | `low` | 10 min | Asynq default (25) | daily 04:00 |
 | `task:requeue-stuck` | `low` | 1 min | Asynq default (25) | every minute; re-enqueues `waiting` tasks older than 1 min |
-| `task:expire-processing` | `low` | 1 min | Asynq default (25) | every minute; fails `processing` tasks older than `task_timeout_seconds` and refunds |
+| `task:expire-processing` | `low` | 1 min | Asynq default (25) | every minute; fails and refunds `processing` tasks older than `task_timeout_seconds` and `waiting` tasks older than `task_queue_timeout_seconds` |
 | `stats:daily-rollup` | `low` | 10 min | Asynq default (25) | daily 00:10 |
 | `share:cleanup` | `low` | 10 min | Asynq default (25) | daily 04:30; removes previews/posters past `share_preview_ttl_days` |
-| `consistency:refund` | `low` | 5 min | Asynq default (25) | every 30 min; refunds failed tasks that are missing a refund row |
+| `consistency:refund` | `low` | 5 min | Asynq default (25) | every 30 min; refunds failed tasks that are missing a refund row, and rejects successful tasks whose work is `risky` |
 
 Schedules use Asia/Shanghai time. The server runs `GEN_CONCURRENCY + 4` workers with queue weights `generation:6, default:3, low:1`; the gen-model router separately caps concurrent calls per provider at `GEN_CONCURRENCY` (default 4, 1 on the shared test/prod hosts).
 
@@ -173,7 +173,7 @@ Schedules use Asia/Shanghai time. The server runs `GEN_CONCURRENCY + 4` workers 
 
 A pipeline or storage error calls `task.Fail`: `failed` with `error_code`, plus the `refund` ledger row, in one transaction; the job then returns `nil`, so Asynq does not retry it. Transient gen-model errors are retried once on the same provider and then on the fallback inside the router (GENERATION_PIPELINE.md ยง8); only database errors while starting or completing a task make Asynq retry the job.
 
-Moderation runs after success. When WeChat is not configured or storage is local, the work is marked `pass` immediately. A `risky` callback marks the work `risky` (hidden from the user's lists and downloads) and revokes its shares. Known gap against D-15: `task.Fail` ignores tasks already in `success`, so the task is not flipped to `CONTENT_REJECTED` and the credit is not refunded.
+Moderation runs after success. When WeChat is not configured or storage is local, the work is marked `pass` immediately. A `risky` callback marks the work `risky` (hidden from the user's lists and downloads), revokes its shares and calls `task.RejectContent`, which moves the task from `success` to `failed/CONTENT_REJECTED` and refunds it in one transaction (D-15, D-25). `task.Fail` itself never touches a successful task, so a late timeout cannot undo a good result. If the rejection fails, the `consistency:refund` job retries it.
 
 ## 7. Provider interfaces
 
@@ -244,7 +244,8 @@ Provider selection lives in `engine/genmodel`: `templates.gen_config.provider` โ
 | `ad_reward_daily_cap` | `10` | ad claim |
 | `ad_session_min_seconds` | `10` | ad claim |
 | `ad_session_ttl_minutes` | `30` | ad claim |
-| `task_timeout_seconds` | `300` | worker |
+| `task_timeout_seconds` | `300` | worker: `processing` deadline |
+| `task_queue_timeout_seconds` | `1800` | worker: `waiting` deadline before fail + refund; never shorter than `task_timeout_seconds` |
 | `photo_retention_days` | `30` | cleanup |
 | `default_provider` | `mock` | worker (gen model) when `GEN_PROVIDER_DEFAULT` is empty |
 | `provider_prices` | `{}`; set e.g. `{"newapi/gpt-image-2.5": <cents>}` | worker cost capture when the provider returns none (NewAPI never does) |

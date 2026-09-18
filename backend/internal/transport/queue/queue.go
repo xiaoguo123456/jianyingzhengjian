@@ -117,7 +117,11 @@ func Mux(a *app.App, enq *Enqueuer) *asynq.ServeMux {
 		if n > 0 {
 			a.Log.Warn("expired tasks", "n", n)
 		}
-		return err
+		w, werr := a.Task.ExpireWaiting(ctx)
+		if w > 0 {
+			a.Log.Warn("expired waiting tasks", "n", w)
+		}
+		return errors.Join(err, werr)
 	})
 	mux.HandleFunc(TypeShareCleanup, func(ctx context.Context, t *asynq.Task) error { _, err := a.Share.Cleanup(ctx); return err })
 	mux.HandleFunc(TypeConsistency, func(ctx context.Context, t *asynq.Task) error {

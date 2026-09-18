@@ -341,6 +341,125 @@ func TestRefundMissing(t *testing.T) {
 	}
 }
 
+// succeeded creates a paid template task and completes it with a work, as the worker would.
+func (f *fixture) succeeded(t *testing.T) (*domain.Task, *domain.Work) {
+	t.Helper()
+	tk, _, err := f.svc.Create(t.Context(), f.uid, f.template())
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := f.svc.Start(t.Context(), tk.ID); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	w := &domain.Work{ID: idgen.New(), UserID: f.uid, TaskID: &tk.ID, Module: domain.ModulePro, ObjectKey: "works/x.jpg",
+		ThumbKey: "works/x_thumb.jpg", Width: 1, Height: 1, Meta: domain.JSON("{}"), ModerationStatus: domain.ModPending, CreatedAt: clock.Now()}
+	if err := f.svc.Succeed(t.Context(), tk, w, 30, "mock", "ref"); err != nil {
+		t.Fatalf("succeed: %v", err)
+	}
+	return tk, w
+}
+
+func (f *fixture) refunds(t *testing.T) int64 {
+	t.Helper()
+	var n int64
+	f.db.Model(&domain.CreditLedger{}).Where("kind = ?", domain.LedgerRefund).Count(&n)
+	return n
+}
+
+// Row 9 of the failure matrix (D-15): an output flagged after success still fails the task and refunds once.
+func TestRejectContentRefundsSucceededTask(t *testing.T) {
+	f := setup(t, 2)
+	tk, _ := f.succeeded(t)
+	if b := f.balance(t); b.Total != 1 {
+		t.Fatalf("after success: %+v, want 1", b)
+	}
+	if err := f.svc.Fail(t.Context(), tk.ID, domain.ErrProvider, 0); err != nil {
+		t.Fatalf("fail: %v", err)
+	}
+	if b := f.balance(t); b.Total != 1 {
+		t.Fatalf("Fail refunded a successful task: %+v", b)
+	}
+	for i := 0; i < 2; i++ {
+		if err := f.svc.RejectContent(t.Context(), tk.ID); err != nil {
+			t.Fatalf("reject %d: %v", i, err)
+		}
+	}
+	if b := f.balance(t); b.Total != 2 {
+		t.Errorf("balance = %+v, want 2 (refunded)", b)
+	}
+	if n := f.refunds(t); n != 1 {
+		t.Errorf("refund rows = %d, want 1", n)
+	}
+	var got domain.Task
+	f.db.First(&got, "id = ?", tk.ID)
+	if got.Status != domain.TaskFailed || got.ErrorCode == nil || *got.ErrorCode != domain.ErrContentRejected || got.RefundLedgerID == nil {
+		t.Errorf("task = %s / %v refund=%v, want failed CONTENT_REJECTED with a refund", got.Status, got.ErrorCode, got.RefundLedgerID)
+	}
+	if got.CostCents != 30 {
+		t.Errorf("cost = %d, want the recorded provider cost 30", got.CostCents)
+	}
+}
+
+// A missed moderation rejection is caught by the consistency job.
+func TestRefundMissingRejectsRiskyWork(t *testing.T) {
+	f := setup(t, 2)
+	tk, w := f.succeeded(t)
+	f.succeeded(t) // a second, clean success must stay untouched
+	f.db.Model(&domain.Work{}).Where("id = ?", w.ID).Update("moderation_status", domain.ModRisky)
+	n, err := f.svc.RefundMissing(t.Context())
+	if err != nil {
+		t.Fatalf("refund missing: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("handled %d, want 1", n)
+	}
+	var got domain.Task
+	f.db.First(&got, "id = ?", tk.ID)
+	if got.Status != domain.TaskFailed || got.ErrorCode == nil || *got.ErrorCode != domain.ErrContentRejected {
+		t.Errorf("task = %s / %v, want failed CONTENT_REJECTED", got.Status, got.ErrorCode)
+	}
+	if b := f.balance(t); b.Total != 1 {
+		t.Errorf("balance = %+v, want 1 (one of two tasks refunded)", b)
+	}
+}
+
+// A task that never leaves the queue is failed and refunded, and a late job no longer runs it.
+func TestExpireWaitingRefunds(t *testing.T) {
+	f := setup(t, 3)
+	stale, _, err := f.svc.Create(t.Context(), f.uid, f.template())
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	fresh, _, err := f.svc.Create(t.Context(), f.uid, f.template())
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	f.db.Model(&domain.Task{}).Where("id = ?", stale.ID).Update("created_at", clock.Now().Add(-31*time.Minute))
+	n, err := f.svc.ExpireWaiting(t.Context())
+	if err != nil {
+		t.Fatalf("expire waiting: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("expired %d, want 1", n)
+	}
+	var got domain.Task
+	f.db.First(&got, "id = ?", stale.ID)
+	if got.Status != domain.TaskFailed || got.ErrorCode == nil || *got.ErrorCode != domain.ErrTimeout || got.RefundLedgerID == nil {
+		t.Errorf("stale task = %s / %v refund=%v, want failed TIMEOUT with a refund", got.Status, got.ErrorCode, got.RefundLedgerID)
+	}
+	var other domain.Task
+	f.db.First(&other, "id = ?", fresh.ID)
+	if other.Status != domain.TaskWaiting {
+		t.Errorf("fresh task = %s, want waiting", other.Status)
+	}
+	if b := f.balance(t); b.Total != 2 {
+		t.Errorf("balance = %+v, want 2 (stale task refunded)", b)
+	}
+	if started, err := f.svc.Start(t.Context(), stale.ID); err != nil || started {
+		t.Errorf("late start = %v, %v; want false", started, err)
+	}
+}
+
 // An unknown background colour falls back to the spec default rather than being accepted.
 func TestInvalidBackgroundFallsBackToDefault(t *testing.T) {
 	f := setup(t, 1)

@@ -4,7 +4,7 @@ This document is the executable version of PRD sections 2.3, 7–8, 22–26 and 
 
 ## 1. Principle
 
-> A credit is reserved in the database **before** any gen-model call, and refunded when the task fails for any reason that is not the user's fault. Operations that do not need the gen model cost no credit and never call it.
+> A credit is reserved in the database **before** any gen-model call, and refunded whenever the task does not deliver a usable result, whatever the reason (D-25). Operations that do not need the gen model cost no credit and never call it.
 
 ## 2. Engines and operation routing (D-21)
 
@@ -106,17 +106,18 @@ Transitions use `UPDATE … WHERE id=? AND status=?` so a late duplicate worker 
 |---|---|---|---|
 | Gen provider 5xx / timeout on first call | retry once (fallback provider if configured), then `failed/PROVIDER_ERROR` | refund | 本次生成失败，生成次数已返还，请重新尝试。 |
 | Provider content-policy rejection | `failed/CONTENT_REJECTED` | refund | 这张照片无法生成，请换一张照片。 |
-| Output flagged by moderation (D-15) | `failed/CONTENT_REJECTED` | refund | same |
+| Output flagged by moderation (D-15), also after the task showed `success` | `failed/CONTENT_REJECTED`, work hidden | refund | same |
 | Identity check below threshold after one regeneration | `failed/IDENTITY_MISMATCH` | refund | 生成结果与本人差异较大，请换一张正脸照片。 |
 | No face at pipeline time | `failed/NO_FACE` | refund | 未检测到清晰人脸，请换一张照片。 |
 | Vision API failure (matte / detect) | retry twice, then `failed/VISION_ERROR` | refund if consumed | generic |
 | Worker crash mid-task | `task:expire-processing` → `failed/TIMEOUT` after 5 min | refund | timeout message |
 | Enqueue failed after commit | stays `waiting`; requeued after 1 min | none | none |
+| Never started within `task_queue_timeout_seconds` (30 min; lost job, worker down) | `failed/TIMEOUT`; a late job skips it | refund | timeout message |
 | Storage failure | `failed/STORAGE_ERROR` | refund | generic |
 | Breaker open at creation (gen tasks only) | 503 before creation | none | 生成服务暂时不可用，请稍后再试。 |
 | Client network timeout on POST /v1/tasks | retry with same `Idempotency-Key` → existing task | one consume only | — |
 
-Refund and status change are one transaction. A nightly consistency job refunds any `failed` task with a consume and no refund and raises an alert.
+Refund and status change are one transaction. Every 30 minutes a consistency job refunds any `failed` task with a consume and no refund, rejects any `success` task whose work is `risky`, and logs an error for each.
 
 ## 7. Pipelines
 
@@ -253,6 +254,9 @@ type GenModel interface {
 | 22 | Acquired user's first success is a free ID photo | no reward; a later gen success rewards |
 | 23 | Sharer and acquired user share a unionid or device | no reward, logged |
 | 24 | Sharer at daily share cap | no reward, logged |
+| 25 | Output flagged `risky` after success, callback delivered twice | task `failed/CONTENT_REJECTED`, one refund, recorded cost kept |
+| 26 | Rejection missed, work already `risky` | consistency job fails and refunds the task |
+| 27 | Task still `waiting` after `task_queue_timeout_seconds` | `failed/TIMEOUT` + refund; a later start is a no-op |
 
 ## 10. Cost accounting
 

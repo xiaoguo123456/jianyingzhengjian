@@ -273,7 +273,7 @@ Owned by `cmd/migrate`: version (file name) PK, checksum (SHA-256 of the file), 
 ## 3. Invariants
 
 1. `credit_ledger` unique `(kind, ref_type, ref_id)` guarantees at most one consume and one refund per task and one reward per ad session.
-2. A task with `consume_ledger_id` set and `status = failed` must have `refund_ledger_id` set (checked by the expiry scheduler and the `consistency:refund` job every 30 minutes).
+2. A task with `consume_ledger_id` set and `status = failed` must have `refund_ledger_id` set, and a task whose work is `risky` must be `failed/CONTENT_REJECTED` (both checked by the `consistency:refund` job every 30 minutes). No task stays `waiting` past `task_queue_timeout_seconds` or `processing` past `task_timeout_seconds` (expiry scheduler).
 3. `works.task_id` is unique where present: at most one output per task. "Regenerate" creates a new task; a free recolor creates a work with `task_id = NULL` and `meta.recolored_from` pointing at the source work.
 4. `photos.expires_at` drives cleanup; works never reference the original's object key, they hold their own copy.
 5. `specs.is_hot = true` rows are limited to 4 per module by the admin API, matching PRD 5.3.

@@ -61,7 +61,10 @@ func (h *Handlers) MediaCheck(c *gin.Context) {
 		if risky {
 			if w, err := h.a.Work.Load(c, id); err == nil {
 				if w.TaskID != nil {
-					_ = h.a.Task.Fail(c, *w.TaskID, domain.ErrContentRejected, 0)
+					if err := h.a.Task.RejectContent(c, *w.TaskID); err != nil {
+						// the consistency job retries rejections of risky works
+						h.a.Log.Error("moderation: reject task", "task", *w.TaskID, "err", err)
+					}
 				}
 				h.a.Share.RevokeByWork(c, w.ID)
 			}

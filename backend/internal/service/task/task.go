@@ -301,21 +301,40 @@ func (s *Service) Succeed(ctx context.Context, t *domain.Task, w *domain.Work, c
 }
 
 // Fail marks the task failed with a code and refunds the credit (idempotent).
+// A task that already succeeded is left alone; see RejectContent for outputs removed by moderation.
 func (s *Service) Fail(ctx context.Context, taskID, code string, cost int) error {
+	_, err := s.fail(ctx, taskID, code, &cost, func(st domain.TaskStatus) bool { return st != domain.TaskSuccess })
+	return err
+}
+
+// RejectContent fails a task whose output was flagged by moderation and refunds its credit,
+// also after the task succeeded (D-15). The provider cost already recorded is kept.
+func (s *Service) RejectContent(ctx context.Context, taskID string) error {
+	_, err := s.fail(ctx, taskID, domain.ErrContentRejected, nil, func(st domain.TaskStatus) bool { return st != domain.TaskFailed })
+	return err
+}
+
+// fail moves the task to failed and refunds a consumed credit in one transaction, if allow accepts the
+// current status. A nil cost keeps the recorded cost. Reports whether the task changed.
+func (s *Service) fail(ctx context.Context, taskID, code string, cost *int, allow func(domain.TaskStatus) bool) (bool, error) {
 	msg := domain.TaskErrorMessages[code]
 	if msg == "" {
 		msg = domain.TaskErrorMessages[domain.ErrProvider]
 	}
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	changed := false
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var t domain.Task
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&t, "id = ?", taskID).Error; err != nil {
 			return err
 		}
-		if t.Status == domain.TaskSuccess {
+		if !allow(t.Status) {
 			return nil
 		}
 		now := clock.Now()
-		upd := map[string]any{"status": domain.TaskFailed, "stage": nil, "error_code": code, "error_message": msg, "finished_at": now, "cost_cents": cost}
+		upd := map[string]any{"status": domain.TaskFailed, "stage": nil, "error_code": code, "error_message": msg, "finished_at": now}
+		if cost != nil {
+			upd["cost_cents"] = *cost
+		}
 		if t.ConsumeLedgerID != nil && t.RefundLedgerID == nil {
 			var consume domain.CreditLedger
 			if err := tx.First(&consume, "id = ?", *t.ConsumeLedgerID).Error; err != nil {
@@ -327,8 +346,10 @@ func (s *Service) Fail(ctx context.Context, taskID, code string, cost int) error
 			}
 			upd["refund_ledger_id"] = refund.ID
 		}
+		changed = true
 		return tx.Model(&domain.Task{}).Where("id = ?", taskID).Updates(upd).Error
 	})
+	return changed && err == nil, err
 }
 
 // ExpireProcessing fails tasks past the deadline (docs/DECISIONS.md D-06).
@@ -341,6 +362,25 @@ func (s *Service) ExpireProcessing(ctx context.Context) (int, error) {
 	n := 0
 	for _, t := range rows {
 		if err := s.Fail(ctx, t.ID, domain.ErrTimeout, t.CostCents); err == nil {
+			n++
+		}
+	}
+	return n, nil
+}
+
+// ExpireWaiting fails and refunds tasks that never started within task_queue_timeout_seconds, e.g. because
+// their queue job was lost or no worker is running. The bound is never shorter than task_timeout_seconds.
+// A job that starts later finds the task no longer waiting and skips it.
+func (s *Service) ExpireWaiting(ctx context.Context) (int, error) {
+	sec := max(s.cfg.Int(ctx, "task_queue_timeout_seconds"), s.cfg.Int(ctx, "task_timeout_seconds"))
+	deadline := clock.Now().Add(-time.Duration(sec) * time.Second)
+	var rows []domain.Task
+	if err := s.db.WithContext(ctx).Where("status = ? AND created_at < ?", domain.TaskWaiting, deadline).Limit(200).Find(&rows).Error; err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, t := range rows {
+		if ok, err := s.fail(ctx, t.ID, domain.ErrTimeout, nil, func(st domain.TaskStatus) bool { return st == domain.TaskWaiting }); err == nil && ok {
 			n++
 		}
 	}
@@ -362,7 +402,8 @@ func (s *Service) RequeueStuck(ctx context.Context) (int, error) {
 	return n, nil
 }
 
-// RefundMissing refunds failed tasks that consumed but never refunded (consistency job).
+// RefundMissing refunds failed tasks that consumed but never refunded, and rejects successful tasks whose
+// work moderation flagged as risky but whose rejection was missed (consistency job).
 func (s *Service) RefundMissing(ctx context.Context) (int, error) {
 	var rows []domain.Task
 	if err := s.db.WithContext(ctx).Where("status = ? AND consume_ledger_id IS NOT NULL AND refund_ledger_id IS NULL", domain.TaskFailed).Limit(200).Find(&rows).Error; err != nil {
@@ -375,6 +416,17 @@ func (s *Service) RefundMissing(ctx context.Context) (int, error) {
 			code = *t.ErrorCode
 		}
 		if err := s.Fail(ctx, t.ID, code, t.CostCents); err == nil {
+			n++
+		}
+	}
+	var rejected []string
+	if err := s.db.WithContext(ctx).Model(&domain.Task{}).Joins("JOIN works ON works.id = tasks.work_id").
+		Where("tasks.status = ? AND works.moderation_status = ?", domain.TaskSuccess, domain.ModRisky).
+		Limit(200).Pluck("tasks.id", &rejected).Error; err != nil {
+		return n, err
+	}
+	for _, id := range rejected {
+		if err := s.RejectContent(ctx, id); err == nil {
 			n++
 		}
 	}

@@ -54,7 +54,7 @@ ID photo tasks reference a **spec** (`spec_id`). Professional, portrait and avat
 
 ## D-06 · Task timeout and retries — Decided
 
-A task that is not `success` or `failed` within **5 minutes** of `started_at` is marked `failed` with `error_code = TIMEOUT` and the credit is refunded. Transient provider errors (HTTP 5xx, rate limit, network) are retried at most **once** inside the same task. Content-policy rejections and invalid input are not retried.
+A task that is not `success` or `failed` within **5 minutes** of `started_at` is marked `failed` with `error_code = TIMEOUT` and the credit is refunded. A task still `waiting` 30 minutes after creation is handled the same way (D-25). Transient provider errors (HTTP 5xx, rate limit, network) are retried at most **once** inside the same task. Content-policy rejections and invalid input are not retried.
 
 ## D-07 · Completion notification — Decided
 
@@ -143,3 +143,7 @@ Confirmed by product on 2026-09-15. PRD V1.0 defines five tabs. The first build 
 - The 写真 tab shows two segment titles at the top, 写真 and 头像, each with its own hero, categories and rails.
 - `avatar` stays a separate module everywhere else: templates, tasks, works, the home API, analytics and the Mine page's four work categories. No backend or data change beyond link paths.
 - Links into the avatar segment use `/pages/portrait/index?seg=avatar`. `uni.switchTab` cannot carry a query, so in-app navigation sets the segment through the client `ui` store.
+
+## D-25 · Every failed generation is refunded — Decided
+
+Confirmed by product on 2026-09-18. Whenever a task that consumed credits does not deliver a usable result, the credits go back, whatever the cause: provider errors, identity mismatch, no face, storage errors, timeouts, and content rejected by moderation, including an output flagged after the task already showed `success`. A task that never starts within `task_queue_timeout_seconds` (default 30 minutes) is failed with `TIMEOUT` and refunded as well, so a lost queue job never holds a credit. Refunds stay idempotent: one refund row per task. GENERATION_PIPELINE.md §6 lists each case.
