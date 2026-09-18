@@ -31,7 +31,7 @@ func run() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	key := fmt.Sprintf("checks/%d.txt", time.Now().UnixNano())
-	payload := []byte("简影 OSS 隔离验收")
+	payload := []byte("映己 OSS 隔离验收")
 	if e = s.Put(ctx, key, bytes.NewReader(payload), int64(len(payload)), "text/plain"); e != nil {
 		return e
 	}

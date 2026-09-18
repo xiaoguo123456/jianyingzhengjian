@@ -23,7 +23,7 @@
 └───────┬──────────────┬──────────────────┬──────────────────┬─────────┘
         │              │                  │                  │
         ▼              ▼                  ▼                  ▼
-   MySQL 8         Redis 7           Tencent COS        WeChat APIs
+PostgreSQL 16      Redis 7          Alibaba Cloud OSS   WeChat APIs
    (system of   (cache, rate      (originals, works,   (code2session,
     record)      limits, Asynq)    template assets)     subscribe msg,
         ▲              │                  ▲              mediaCheck,
@@ -34,7 +34,7 @@
 └───────┬──────────────────┬───────────────────────────────────────────┘
         ▼                  ▼
   vision APIs          gen-model providers (pluggable, with fallback)
-  face detect/compare, Seedream · Wanx · Hunyuan · mock
+  face detect/compare, NewAPI (gpt-image-2.5) · mock
   portrait matting
 ```
 
@@ -43,11 +43,11 @@
 | Client | All user-facing UI; WeChat capabilities (login, ads, album, camera, subscribe messages, privacy, share) behind a platform layer | uni-app, Vue 3, TypeScript, Pinia, SCSS; target `mp-weixin` now, `app-plus` / `h5` later |
 | `api` | Public JSON API, admin API, webhooks, auth, credit ledger, task creation | Go, Gin, GORM |
 | `worker` | Executes tasks through three engines (`local` imaging, `vision` APIs, `genmodel` providers), writes results, renders posters, sends notifications, runs scheduled cleanup | Go, Asynq |
-| MySQL | System of record: users, credits, ledger, tasks, works, catalogue, config | MySQL 8.0 |
-| Redis | Asynq queues, config cache, rate limiting, ad-session TTL index | Redis 7 |
-| Object storage | Originals (private), works (private, signed URLs), template/banner assets (public via CDN) | Tencent COS + CDN; MinIO in dev |
+| PostgreSQL | System of record: users, credits, ledger, tasks, works, catalogue, config | PostgreSQL 16 (existing Alibaba Cloud instance, one database per environment) |
+| Redis | Asynq queues, config cache, rate limiting, ad-session TTL index | Redis 7 (shared instance; every key under the `yingji:<env>:` prefix) |
+| Object storage | Originals, works, avatars, catalogue assets and share images — all private, served as signed URLs | Alibaba Cloud OSS (shared bucket, `yingji/<env>` prefix); local disk in dev |
 | Admin console | Catalogue CRUD, config, task and user lookup, funnel dashboard | React + Ant Design (can start as a thin internal tool) |
-| External | Face detection and compare, portrait matting, image generation, WeChat platform | Tencent Cloud iai / portrait segmentation; gen-model providers with capability-based routing and fallback (GENERATION_PIPELINE.md §8); WeChat Open API incl. wxacode |
+| External | Face detection and compare, portrait matting, image generation, WeChat platform | Tencent Cloud iai / portrait segmentation; NewAPI (OpenAI-compatible `/images/edits`, `gpt-image-2.5`) behind capability-based routing and fallback (GENERATION_PIPELINE.md §8); WeChat Open API incl. wxacode |
 
 ## 3. Trust boundaries
 
@@ -76,7 +76,7 @@ Tokens live 24 h. On 401 the client silently re-runs `wx.login` and retries once
 
 ```
 1  Client: pick template/spec → upload photo → POST /v1/photos
-2  api: store original in COS, run face check, return photo + check result
+2  api: store original in OSS, run face check, return photo + check result
 3  Client: confirm → POST /v1/tasks
 4  api: credit check fails → 402 NO_CREDITS
 5  Client: POST /v1/ads/sessions → {session_id}; play rewarded video
@@ -99,18 +99,21 @@ Each tab loads `GET /v1/home/{module}` once, which returns banner, hot items, fe
 
 | Data | Owner | Store | Lifetime |
 |---|---|---|---|
-| User identity, credits, ledger | api | MySQL | Account lifetime |
-| Uploaded originals | user | COS `originals/` (private) | 30 days or user deletion (D-16) |
-| Generated works | user | COS `works/` (private) + MySQL row | Until user deletion |
-| Intermediate layers (alpha mask, crops) | worker | COS `tmp/` | 7 days, lifecycle rule |
-| Catalogue assets | ops | COS `assets/` (public, CDN) | Managed in admin |
-| Share previews and posters | user (explicit share action) | COS `shares/` (public, CDN, AI label burned in) | Until revoke, work deletion, or 90 days after last open |
-| Task records, cost | api/worker | MySQL | Retained for analytics |
+| User identity, credits, ledger | api | PostgreSQL | Account lifetime |
+| Uploaded originals | user | OSS `originals/` (private, 30 min signed URLs) | 30 days or user deletion (D-16) |
+| Generated works | user | OSS `works/` (private, 10 min signed URLs) + PostgreSQL row | Until user deletion |
+| ID-photo alpha matte | worker | OSS `works/{user}/{id}_alpha.png`, shared by the source work and its free recolors | Should end with the last work that uses it; today deleting a work leaves the matte behind (known gap). Other intermediates stay in memory |
+| Catalogue assets | ops | OSS `assets/` (private, 24 h signed URLs) | Managed in admin |
+| Share previews and posters | user (explicit share action) | OSS `shares/` (private, 24 h signed URLs, AI label burned in) | Until revoke, work deletion, or 90 days after last open |
+| Task records, cost | api/worker | PostgreSQL | Retained for analytics |
+
+All object keys above are relative to the environment prefix (`yingji/test/`, `yingji/production/`) in a bucket shared with other projects. The bucket stays private: this project never changes its ACL or policy, so even "public" prefixes are delivered as signed URLs.
 
 ## 6. Scalability and cost posture
 
 - `api` is stateless; scale horizontally behind a load balancer.
-- `worker` concurrency is bounded per provider (`generation` queue, concurrency 4 by default) so a spike converts into queue depth, not provider throttling and wasted retries.
+- `worker` concurrency is bounded per provider (`generation` queue, concurrency 4 by default, 1 on the current shared hosts) so a spike converts into queue depth, not provider throttling and wasted retries.
+- Database connections are capped per process (2 on the shared PostgreSQL instance), so scaling out means raising that budget with the database owner first.
 - Provider cost is written on every task; a daily job aggregates cost per template for the admin dashboard.
 - All external calls have explicit timeouts and a circuit breaker per provider. When the breaker is open, `POST /v1/tasks` returns 503 `GENERATION_UNAVAILABLE` **before** any credit is consumed.
 

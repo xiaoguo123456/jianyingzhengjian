@@ -81,7 +81,7 @@ client/
 │   │   └── ui.ts        # cross-page UI state (写真 tab segment)
 │   ├── composables/                # usePolling, useShare, usePageShare, useSafeArea, useAsyncState
 │   ├── utils/                      # rpx, format, spec (mm/px), errors (all user-facing copy), uuid
-│   └── static/                     # tabbar icons, images (small only; large assets via CDN)
+│   └── static/                     # tabbar icons, images (small only; large assets come from OSS)
 ├── tests/                          # vitest unit, automator e2e
 ├── package.json  vite.config.ts  tsconfig.json  .eslintrc.cjs
 ```
@@ -180,7 +180,7 @@ result
 
 - Home payload cached; tab switch instant after first load.
 - Lists paginate at 20 with `onReachBottom`; portrait masonry uses two columns with lazy images.
-- Images from CDN with COS processing params (`?imageMogr2/thumbnail/600x`), `lazy-load`, `mode="aspectFill"` for covers.
+- Images are signed OSS URLs (works 10 min, catalogue and share images 24 h), so a page that stays open longer re-fetches its data instead of caching URLs. Lists use the server-made thumbnails (`thumb_url`) with `lazy-load` and `mode="aspectFill"` for covers.
 - Keep `static/` tiny; every catalogue image is remote.
 - Main package target < 1.5 MB after build; check with the DevTools code-size report on every release.
 

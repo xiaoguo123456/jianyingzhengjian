@@ -1,85 +1,113 @@
 # Deployment and Operations
 
+Operational details (server addresses, first-time setup, gateway snippets, rollback commands) live in [backend/deploy/README.md](../backend/deploy/README.md). This document describes the shape of the system and the rules; the deploy README is the runbook.
+
 ## 1. Environments
 
-| Env | Purpose | Mini Program version | API host | Ads | Provider |
-|---|---|---|---|---|---|
-| `dev` | local development | DevTools | `http://localhost:8080` (DevTools "不校验合法域名" on) | off | `mock` |
-| `staging` | QA, review submission | 体验版 (trial) | `https://api-staging.<domain>` | off or test unit | real provider, low quota |
-| `prod` | users | 正式版 (release) | `https://api.<domain>` | on once 流量主 approved | real provider |
+| Env | `APP_ENV` | Purpose | Mini Program build | API base URL | Gen model | Vision | Storage |
+|---|---|---|---|---|---|---|---|
+| `dev` | `dev` | local development | `pnpm dev:mp-weixin` / `dev:h5` (DevTools "不校验合法域名" on) | `http://localhost:8080` | `mock` (or `newapi` with a key) | `mock` | local disk, served at `/files` |
+| test | `staging` | QA, review submission | `pnpm build:test` → 体验版 (trial) | `https://test-www.qhzhiyin.com/yingji` | `newapi` | `mock` allowed | OSS, prefix `yingji/test` |
+| production | `prod` | users | `pnpm build:prod` → 正式版 (release) | `https://platform.qhzhiyin.com/yingji` | `newapi` | `tencent`, or `disabled` until credentials exist | OSS, prefix `yingji/production` |
 
-The Mini Program picks the API host from `wx.getAccountInfoSync().miniProgram.envVersion` (`develop` / `trial` / `release`). All production hosts must have ICP filing and valid TLS; register them in the MP console under request / uploadFile / downloadFile.
+The client picks its API base URL at build time from `VITE_APP_ENV` (`client/src/config/index.ts`); `VITE_API_BASE` overrides it for local work. All hosts the Mini Program talks to must have ICP filing and valid TLS and be registered in the MP console: the API domain under request / uploadFile, and the OSS public endpoint domain under downloadFile (images are served as signed OSS URLs).
 
-## 2. Infrastructure (production)
+`config.Validate` refuses to start `APP_ENV=prod` with the `mock` gen model or `mock` vision, with a storage driver other than `oss`, or with signing secrets shorter than 32 characters or containing `change-me`. With `FACE_PROVIDER=disabled` photo processing is rejected, so the generation flow stays closed in production until Tencent vision credentials are configured.
 
-Recommended on Tencent Cloud (same ecosystem as WeChat and COS):
+## 2. Infrastructure
+
+Everything runs on Alibaba Cloud (region `cn-beijing`), on hosts and data services the team already operates for other projects:
 
 ```
-Internet ──▶ CLB (TLS termination) ──▶ api ×2 (containers)
-                                   └─▶ admin console (static, COS + CDN, path /admin)
-                        worker ×2 (containers, no public port)
-                        TencentDB for MySQL 8 (1 primary + 1 replica, daily backup, 7-day binlog)
-                        TencentDB for Redis 7 (standard, AOF)
-                        COS bucket (private) + CDN domain for the public assets/ and shares/ prefixes
-                        CLS (logs) · Prometheus + Grafana (metrics) · alert to WeCom
+Internet ──▶ existing Nginx gateway (TLS) ── /yingji/ ──▶ api container (127.0.0.1:<API_PORT>)
+                                                          worker container (no port)
+                                                               │
+                         same VPC, internal endpoints ─────────┼──────────────────────────────┐
+                                                               ▼                              ▼
+                               PostgreSQL 16 (existing RDS instance)          Redis (existing instance)
+                               db yingji_test / yingji_prod                    DB 5 / DB 6
+                               account yingji_test_app / yingji_prod_app       prefix yingji:test: / yingji:prod:
+                                                               │
+                                                               ▼
+                               OSS bucket (shared, private) — prefix yingji/test / yingji/production
+                               upload via the internal endpoint, sign via the public endpoint
 ```
 
-Start on two small CVM instances or a Lighthouse pair with docker-compose if budget is tight; the compose file below works unchanged. Move to TKE when replicas exceed what one host can run.
+- One host per environment, each in its own directory (`/opt/yingji-test`, `/opt/yingji-production`). Only the `api` and `worker` containers belong to this project; no database containers run on the servers.
+- The gateway is shared. The test gateway belongs to another project, so every change there must keep the `/yingji/` route; production proxies `/yingji/` to `127.0.0.1:8014`. `/yingji/metrics` returns 404 at both gateways. Snippets: `backend/deploy/gateway/`.
+- Shared-resource rules: never flush the shared Redis or delete keys outside this project's prefix; never change the shared bucket's ACL or policy; the RDS instance has SSL off, so connections stay on the VPC network with `sslmode=disable`.
+- Sized for small shared hosts: each process opens at most 2 database connections with no idle pool (`DB_MAX_OPEN=2`, `DB_MAX_IDLE=0`); `GEN_CONCURRENCY=1`; `api` is limited to 128 MB / 0.35 CPU and `worker` to 384 MB / 0.5 CPU.
 
-**Alternative:** 微信云托管 (WeChat Cloud Run) can host both containers and removes ICP/domain work for `callContainer` traffic. The API keeps its own JWT auth so the code is identical; only the client transport differs. Evaluate if ICP filing is a blocker.
+**Alternative, not in use:** 微信云托管 (WeChat Cloud Run) could host both containers and remove the ICP/domain work for `callContainer` traffic. The API keeps its own JWT auth so the code would be identical; only the client transport differs.
 
 ## 3. Containers
 
 ```
-deploy/
-├── Dockerfile.api        # multi-stage: golang:1.23 build → distroless
-├── Dockerfile.worker
-├── docker-compose.yml    # dev/staging: api, worker, mysql, redis, minio, asynqmon
-└── .env.example
+backend/deploy/
+├── Dockerfile.release    # test/prod: golang:1.26 build → scratch; one image with api, worker, migrate, healthcheck + seed/assets; runs as 65532
+├── compose.release.yml   # test/prod: api, worker, migrate (tools profile); read-only rootfs, cap_drop ALL, no-new-privileges, healthchecks
+├── Dockerfile.api / Dockerfile.worker
+├── docker-compose.yml    # local dev only: postgres:16, redis:7, api, worker with local storage
+├── gateway/              # Nginx location blocks for the test and prod gateways
+├── scripts/deploy.sh, scripts/rollback.sh
+└── .env.example          # server .env template (test values)
 ```
 
-Key environment variables:
+The same image serves both roles: `api` is the default entrypoint, the worker overrides it with `/app/worker`. Health checks: `api` runs `/app/healthcheck` (calls `/readyz`, which pings PostgreSQL and Redis); `worker` runs `/app/healthcheck worker`, which asks the Asynq inspector whether this host has an active server.
+
+Key environment variables (full list: `backend/.env.example`, `backend/deploy/.env.example`):
 
 | Variable | Example | Notes |
 |---|---|---|
-| `APP_ENV` | `prod` | |
-| `HTTP_ADDR` | `:8080` | |
-| `MYSQL_DSN` | `user:pass@tcp(host:3306)/yingji?parseTime=true&loc=UTC` | |
-| `REDIS_ADDR` / `REDIS_PASSWORD` | | |
-| `JWT_SECRET_MP` / `JWT_SECRET_ADMIN` | | rotate via dual-secret grace |
+| `DEPLOY_ENV` / `API_PORT` / `GATEWAY_NETWORK` | `test` / `8013` / `weishen-test_default` | compose only; prod uses `production` / `8014` / `weishen-prod_default` |
+| `APP_ENV` | `staging`, `prod` | |
+| `HTTP_ADDR` / `PUBLIC_BASE_URL` / `CORS_ORIGINS` | `:8080` / `https://test-www.qhzhiyin.com/yingji` | |
+| `DATABASE_URL` | `postgres://yingji_test_app:***@<rds-internal>:5432/yingji_test?sslmode=disable` | URL-encode special characters in the password |
+| `DB_MAX_OPEN` / `DB_MAX_IDLE` | `2` / `0` | per process |
+| `REDIS_ADDR` / `REDIS_USERNAME` / `REDIS_PASSWORD` / `REDIS_DB` | `<redis-internal>:6379` / / / `5` | |
+| `REDIS_PREFIX` | `yingji:test:` | must match `yingji:<env>:`; applied to cache keys, Asynq keys and channels |
+| `JWT_SECRET_MP` / `JWT_SECRET_ADMIN` / `SIGN_SECRET` | | ≥ 32 random characters in prod |
 | `WECHAT_APPID` / `WECHAT_SECRET` | | api and worker |
-| `WECHAT_AD_CALLBACK_SECRET` | | webhook signature |
-| `COS_BUCKET` / `COS_REGION` / `COS_SECRET_ID` / `COS_SECRET_KEY` / `COS_CDN_HOST` | | |
-| `FACE_PROVIDER` / `TENCENT_IAI_SECRET_ID` / `..._KEY` | | worker |
-| `GEN_PROVIDER_DEFAULT` / `SEEDREAM_API_KEY` / `WANX_API_KEY` / `HUNYUAN_*` | | worker; only providers referenced by templates need keys |
-| `GEN_CONCURRENCY` | `4` | worker |
+| `WECHAT_AD_CALLBACK_SECRET` / `WECHAT_REWARD_AD_UNIT_ID` / `WECHAT_SUBSCRIBE_TASK_FINISHED` | | ads and subscribe messages |
+| `STORAGE_DRIVER` | `oss` | `local` in dev only |
+| `OSS_REGION` / `OSS_BUCKET` / `OSS_PREFIX` | `cn-beijing` / / `yingji/test` | prefix is mandatory and must differ per environment |
+| `OSS_ENDPOINT` / `OSS_PUBLIC_ENDPOINT` | `https://oss-cn-beijing-internal.aliyuncs.com` / `https://oss-cn-beijing.aliyuncs.com` | upload internally, sign publicly; HTTPS only |
+| `OSS_ACCESS_KEY_ID` / `OSS_ACCESS_KEY_SECRET` | | |
+| `GEN_PROVIDER_DEFAULT` / `GEN_CONCURRENCY` | `newapi` / `1` | |
+| `NEWAPI_BASE_URL` / `NEWAPI_MODEL` / `NEWAPI_API_KEY` | `https://www.ggwk1.online/v1` / `gpt-image-2.5` / | key lives only on the server |
+| `FACE_PROVIDER` / `TENCENT_SECRET_ID` / `TENCENT_SECRET_KEY` / `TENCENT_REGION` | `mock` (test), `disabled` or `tencent` (prod) | |
 | `LOG_LEVEL` | `info` | |
-| `POSTER_FONT_PATH` | `/usr/share/fonts/.../NotoSansCJK.ttc` | required for the visible AI label and poster text; `.ttf`, `.otf` and `.ttc` collections are supported. Without it the label degrades to a marker with no text, which does not satisfy COMPLIANCE.md §3.2 — ship a CJK font in the worker image |
+| `ADMIN_INIT_USER` / `ADMIN_INIT_PASSWORD` | | used by the first `migrate seed` only |
+| `POSTER_FONT_PATH` | `/usr/share/fonts/.../NotoSansCJK.ttc` | required for the visible AI label and poster text; `.ttf`, `.otf` and `.ttc` collections are supported. Without it the label degrades to a marker with no text, which does not satisfy COMPLIANCE.md §3.2. The release image is built `FROM scratch` and ships no font yet: add one to the image (or mount it) and set this variable before opening generation in production |
 
-Secrets come from the platform's secret store (or `.env` on a single host with `chmod 600`), never from the repo.
+Secrets live only in the server's `.env` (mode `600`, checked by `deploy.sh`), never in the repo. To change configuration, place the new file as `.env.next` (mode `600`); the next deploy switches to it and restores the previous `.env` if the deploy fails. Each release keeps its pre-deploy config as `releases/<sha>/env.before` (mode `600`). Locally, `.env.deploy.local` holds both environments' connection settings and is ignored by Git.
 
 ## 4. Database migrations
 
-`cmd/migrate up` runs before the new `api`/`worker` start (init container or deploy script step). Migrations are forward-only in production; a failed migration halts the rollout. Schema changes that drop or rename columns are done in two releases (add → backfill → switch → drop).
+`deploy.sh` runs `migrate up` in a one-off container before the new `api`/`worker` start; a failed migration stops the release and the previous containers keep running. The first release in an environment also runs `migrate seed` and writes `.initialized-postgres`; later releases never seed, so templates edited through the admin API are not overwritten. Migrations are forward-only; see DATA_MODEL.md §5 for the file, checksum and lock rules. Rollback restores the application image only, so every migration must stay compatible with the previous image. After the switch from MySQL, the deploy script refuses to roll back across database engines; the old MySQL data directory is kept for reconciliation only.
 
 ## 5. CI/CD
 
-GitHub Actions (or Coding.net) pipelines:
+GitHub Actions, backend only for now:
 
-**backend**
-1. `go vet`, `golangci-lint`, `go test ./...` (unit) on every PR.
-2. Integration tests with testcontainers on `main`.
-3. Build and push images tagged with the commit SHA; deploy to staging automatically; deploy to prod on a tagged release after a manual approval.
+| Workflow | Trigger | What it does |
+|---|---|---|
+| `backend-check.yml` | PRs touching `backend/**` or workflows; called by `test.yml` | `go test ./...` and `go vet ./...` against PostgreSQL 16 and Redis 7 service containers; `migrate up` twice and `migrate seed` |
+| `test.yml` | push to `main` touching `backend/**` or `.github/workflows/**`; manual | runs the check, then deploys that commit to test |
+| `prod.yml` | manual, input: full 40-character SHA | verifies the SHA is on `main` and that `test.yml` succeeded for it, then deploys it to production |
+| `deploy.yml` | called by `test.yml` / `prod.yml` | builds a `linux/amd64` image `yingji-backend:<sha>`, saves it as a gzip tarball with a SHA-256 file, copies it with the compose file and scripts over SSH (pinned `known_hosts`, key from repository secrets), and runs `deploy.sh <sha>` |
 
-**client (uni-app)**
-1. `vue-tsc --noEmit`, ESLint, Vitest, and a grep gate that fails if `wx.` appears outside `src/platform/*.mp.ts` on every PR.
-2. On `main`: `npm run build:mp-weixin` with `VITE_APP_ENV=staging`, then `miniprogram-ci preview` on `dist/build/mp-weixin` posts a QR code to the PR / WeCom.
-3. On tag: build with `VITE_APP_ENV=prod`, `miniprogram-ci upload` with the version and a changelog; a human sets it as 体验版 and submits for review.
-4. App builds (later): `npm run build:app` produces the native project resources; packaging runs in HBuilderX cloud packaging or the offline SDK on a separate pipeline.
+`deploy.sh` holds a lock, verifies the tarball checksum, loads the image, backs up `.env` and the compose file, applies `.env.next` if present, checks that `DATABASE_URL` and a `yingji:` Redis prefix are set, migrates, seeds once, then `docker compose up --wait` until both health checks pass. Only then does it record the release in `current.env` / `previous.env`; any failure restores the previous image and configuration. No container registry is involved. Deploys to one environment are serialised by a GitHub concurrency group.
 
-**admin**: static build uploaded to COS `admin/` and CDN purge.
+Pushing to `main` deploys to test automatically; production is always a deliberate, manual step with an explicit commit.
+
+**client (uni-app) — planned, not automated yet.** Today the Mini Program is built locally (`pnpm build:test` / `pnpm build:prod`) and uploaded from WeChat DevTools. Target pipeline: on every PR `vue-tsc --noEmit` and a grep gate that fails if `wx.` appears outside `src/platform/*.mp.ts`; on `main`, `build:test` plus `miniprogram-ci preview`; on tag, `build:prod` plus `miniprogram-ci upload`, after which a human sets 体验版 and submits for review. App builds (later) run on a separate pipeline.
+
+**admin** — there is no admin console yet; catalogue and configuration are managed through the admin API (`/admin/v1/*`).
 
 ## 6. Observability and alerts
+
+Current state: containers log JSON to Docker's `json-file` driver (10 MB × 3 files per container); `/metrics` is served inside the container but blocked at the gateway; no Prometheus, alerting or Asynqmon is deployed yet. The table below is the target once monitoring is connected.
 
 | Signal | Threshold | Channel |
 |---|---|---|
@@ -92,22 +120,26 @@ GitHub Actions (or Coding.net) pipelines:
 | Consistency job found unrefunded failures | ≥ 1 | WeCom |
 | Disk / DB connections / Redis memory | platform defaults | WeCom |
 
-Dashboards: funnel (PRD §2 metrics), tasks per module, cost per day, ad claims accepted/rejected by reason, queue depth, provider latency. Asynqmon is deployed internally for queue inspection.
+Dashboards: funnel (PRD §2 metrics), tasks per module, cost per day, ad claims accepted/rejected by reason, queue depth, provider latency.
 
 ## 7. Backups and recovery
 
-- MySQL: automated daily snapshot + binlog, 7-day retention; restore drill once before launch.
-- COS: versioning off (cost); works are the only irreplaceable objects and are covered by cross-region replication if budget allows.
-- Redis: AOF; losing Redis loses queued jobs, which `task:requeue-stuck` recovers from MySQL within a minute.
+- PostgreSQL: backups are handled by the existing RDS operations for the shared instance; confirm retention and run a restore drill for `yingji_prod` before launch. Application images are not a substitute for data backups.
+- OSS: versioning off (cost); works are the only irreplaceable objects. If budget allows, replicate the `yingji/production/works/` prefix to another region.
+- Redis: shared instance, persistence as configured by its owners; losing Redis loses queued jobs, which `task:requeue-stuck` recovers from PostgreSQL within a minute.
+- Application: `scripts/rollback.sh` in the environment directory swaps back to the previous image and leaves the database unchanged.
 
 ## 8. Release checklist
 
-- [ ] Migrations applied on staging and prod.
-- [ ] `app_configs` reviewed: `ads_enabled`, credit numbers, provider, retention.
+- [ ] Commit deployed to test and verified there; production deploy started from `prod.yml` with that SHA.
+- [ ] New migrations are additive and compatible with the previous image.
+- [ ] Server `.env` reviewed (mode `600`): prefixes, OSS endpoints, `FACE_PROVIDER`, `POSTER_FONT_PATH`, secrets.
+- [ ] `app_configs` reviewed: `ads_enabled`, credit numbers, `provider_prices`, retention.
 - [ ] Spec seed data verified (UI-16) and marked with `source_note`.
-- [ ] Domains whitelisted; TLS valid > 30 days.
+- [ ] Domains whitelisted (API and OSS public endpoint); TLS valid > 30 days.
+- [ ] Test gateway still routes `/yingji/` after any change by the gateway's owning project.
 - [ ] Subscribe message template approved; ad unit id (if any) in config.
 - [ ] COMPLIANCE.md launch checklist complete.
-- [ ] Staging e2e flow green on iOS and Android with ads on and off.
-- [ ] Rollback plan: previous image tag and `migrate down` tested for the release's migrations.
+- [ ] Test-environment e2e flow green on iOS and Android with ads on and off.
+- [ ] Rollback plan: `scripts/rollback.sh` target (previous image) known; no migration in this release blocks it.
 - [ ] On-call owner and alert channels confirmed for launch week.

@@ -1,4 +1,4 @@
-// Package redisx 隔离简影缓存和 Asynq 队列，包括脚本内使用的键前缀及订阅频道。
+// Package redisx 隔离映己缓存和 Asynq 队列，包括脚本内使用的键前缀及订阅频道。
 package redisx
 
 import (

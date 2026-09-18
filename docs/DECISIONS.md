@@ -112,7 +112,9 @@ uni-app (Vue 3 + TypeScript, Vite CLI project), building `mp-weixin` first. A na
 
 ## D-20 · Backend stack — Decided
 
-Go 1.23, Gin, GORM on MySQL 8, Redis 7 with Asynq for background jobs, Tencent COS for object storage. Rationale in BACKEND_ARCHITECTURE.md.
+Go 1.26, Gin, GORM on PostgreSQL 16, Redis 7 with Asynq for background jobs, Alibaba Cloud OSS for object storage, NewAPI (`gpt-image-2.5` via `/images/edits`) as the default gen-model provider. Rationale in BACKEND_ARCHITECTURE.md.
+
+Revised 2026-09-15. The original choice was MySQL 8, Tencent COS and a Volcengine Seedream provider. The deployment moved to the Alibaba Cloud hosts, PostgreSQL 16 and Redis instances the team already operates, so the database became PostgreSQL (one database per environment), storage became OSS under a per-environment prefix in a shared private bucket, and Redis keys are namespaced per environment. Image generation moved to NewAPI, the first provider verified end to end against a live service. The MySQL migration history is kept for reference only; a release never rolls back across the engine change.
 
 ## D-21 · Image engines: gen model for creation, cheap engines for processing — Decided
 

@@ -30,7 +30,7 @@ user taps 分享作品 / 分享模板 / 生成海报
    ▼
 POST /v1/shares { type: template|work|poster|tab, template_id?, spec_id?, work_id? }
    │   server: create share row (ULID), build path with s=<share_id>,
-   │           for work/poster: copy work thumb to shares/{id}.jpg (public via CDN, AI label burned in)
+   │           for work/poster: copy work thumb to shares/{id}.jpg (private, 24 h signed URL, AI label burned in)
    │           for poster: render poster (worker or inline), return signed URL
    ▼
 client: y-share-sheet

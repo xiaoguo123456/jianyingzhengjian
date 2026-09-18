@@ -32,8 +32,8 @@ This product processes facial images and produces AI-generated portraits. Both a
 
 | Data | Retention | Mechanism |
 |---|---|---|
-| Uploaded originals | 30 days or user deletion | `photos.expires_at` + daily cleanup job; COS lifecycle rule as backstop |
-| Intermediate layers | 7 days | COS lifecycle rule on `tmp/` |
+| Uploaded originals | 30 days or user deletion | `photos.expires_at` + daily cleanup job; an OSS lifecycle rule on `yingji/<env>/originals/` as backstop |
+| Intermediate layers | not persisted | kept in worker memory; the only stored layer is the ID-photo alpha matte, shared by a work and its recolors. Known gap: work deletion does not yet delete the matte, so it must be removed when the last work using it is deleted before launch |
 | Works | until user deletion | user action → soft delete + object delete within 24 h |
 | Face detection results | with the photo | stored in `photos.check_result`, deleted with the photo |
 | Provider-side copies | provider-dependent | prefer providers with no-retention options; record the choice in `templates.gen_config` |
@@ -66,7 +66,7 @@ Every output written by the worker carries metadata per GB 45438-2025: XMP/EXIF 
 
 ### 3.3 Model filing (备案)
 
-Generation runs on third-party models. Choose providers whose models are filed under 生成式人工智能服务 and record the filing number in DEPLOYMENT.md. WeChat's review currently asks Mini Programs offering generative AI features to declare the model source and filing information in the MP console; complete this before submission.
+Generation runs on third-party models. Choose providers whose models are filed under 生成式人工智能服务 and record the filing number in DEPLOYMENT.md. The current default is `gpt-image-2.5` through the NewAPI gateway (GENERATION_PIPELINE.md §8); confirm its filing status before submission, and switch the default to a filed model if it has none. WeChat's review currently asks Mini Programs offering generative AI features to declare the model source and filing information in the MP console; complete this before submission.
 
 ## 4. Content moderation (D-15)
 
@@ -79,7 +79,7 @@ Generation runs on third-party models. Choose providers whose models are filed u
 
 - Category: 工具 › 图片处理 (confirm current category name in the console). Add 摄影 if required by the reviewer.
 - Test account with credits and `ads_enabled=false` so reviewers can generate without ads; put instructions in the review notes.
-- Server domains whitelisted: API (`request`, `uploadFile`), COS/CDN (`downloadFile`).
+- Server domains whitelisted: API (`request`, `uploadFile`), OSS public endpoint (`downloadFile`).
 - No WeChat brand assets in icons (UI-07).
 - Privacy authorisation must appear before any photo access; reviewers test this.
 - Subscribe message template approved before use.
@@ -97,7 +97,7 @@ Rewarded video usage follows WeChat's policy: the reward is a feature credit, th
 
 - [ ] Privacy policy and user agreement published; versions recorded.
 - [ ] MP console privacy declarations complete; `__usePrivacyCheck__` verified on a real device.
-- [ ] Retention jobs and COS lifecycle rules enabled in production.
+- [ ] Retention jobs and the OSS lifecycle rule on this project's `originals/` prefix enabled in production (never a bucket-wide rule: the bucket is shared).
 - [ ] Implicit labels verified with an XMP reader; explicit labels visible on sample outputs, share previews and posters.
 - [ ] Provider filing numbers recorded; MP console AI declaration filled.
 - [ ] mediaCheckAsync callback tested end to end.

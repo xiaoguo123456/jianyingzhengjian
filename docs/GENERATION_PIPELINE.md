@@ -176,20 +176,23 @@ Credit: `templates.credit_cost` (default 1). "Regenerate" = same request, new se
 ```json
 {
   "engine": "genmodel",
-  "provider": "seedream",            // optional; falls back to config.default_provider
-  "model": "seedream-4.0",
+  "provider": "newapi",              // optional; falls back to the default provider (GEN_PROVIDER_DEFAULT)
+  "model": "gpt-image-2.5",          // optional; falls back to NEWAPI_MODEL
   "mode": "reference",               // img2img | reference | edit
   "prompt": "professional corporate headshot, navy suit, soft studio light, neutral grey backdrop, {gender}",
   "negative_prompt": "text, watermark, extra fingers, distorted face",
-  "strength": 0.55,                  // img2img only
+  "strength": 0.55,                  // img2img only; not sent by the newapi provider
   "output": { "width": 1024, "height": 1365 },
   "identity_check": true,
   "identity_threshold": 0.75,
   "post": [ { "op": "resize", "width": 1200, "height": 1600 } ],
   "style": "photo",                  // photo | illustration (label + identity rules differ)
-  "fallback_provider": "wanx"
+  "fallback_provider": "",           // optional; must be a registered provider
+  "extra": { "quality": "high" }     // provider pass-through; newapi accepts only quality and background
 }
 ```
+
+With `newapi` the model is asked for the closest supported size by aspect ratio (`1024x1024`, `1024x1536`, `1536x1024`) and the result is then cropped and resized to `output`.
 
 Examples of new products that need **no code change**: a "证件照换发型" template = `mode: edit`, prompt for hairstyle, `post: [crop_spec…]` is not allowed (spec pipelines are code), but an "avatar hairstyle" template is just a row. A "职业照办公室背景" template = `mode: edit` with a background instruction. Anything requiring a new local step is a code change to the step library, not to the pipelines.
 
@@ -216,10 +219,11 @@ type GenModel interface {
 }
 ```
 
-- The router picks `gen_config.provider`, verifies `Capabilities()` covers `mode`, else uses `fallback_provider`, else `config.default_provider`. A template whose mode no provider supports fails validation in the admin API.
+- The router picks `gen_config.provider`, verifies `Capabilities()` covers `mode`, else uses `fallback_provider`, else the default provider (`GEN_PROVIDER_DEFAULT`; `app_configs.default_provider` only when the variable is empty). A provider exists in the router only when its API key is configured. A template whose mode no provider supports fails validation in the admin API.
 - Each provider has a circuit breaker (5 failures / 30 s) and a concurrency semaphore; when the chosen provider's breaker is open and a fallback exists, the task uses the fallback; when none is available `POST /v1/tasks` returns 503 for gen tasks.
-- Candidate providers (choose filed models for China: COMPLIANCE.md §3.3): Volcengine Seedream (edit + multi-reference), Alibaba Wanx (image edit), Tencent Hunyuan Image, Kling Image. The `mock` provider stamps the input and is used in dev/CI.
-- Cost per call comes from the provider response when available, otherwise from `config.provider_prices` keyed by provider/model.
+- Implemented providers: `newapi` — an OpenAI-compatible gateway calling `/images/edits` with `gpt-image-2.5`; the default in test and production and verified against the live service (BACKEND_ARCHITECTURE.md §7). `volcengine` (Seedream) — adapter kept but never called against the live API. `mock` — stamps the input; dev and CI only, refused in production. Before launch, confirm that the model behind the gateway meets the filing requirement in COMPLIANCE.md §3.3; Alibaba Wanx, Tencent Hunyuan Image and Kling Image remain candidates for a filed fallback.
+- `newapi` never degrades to text-to-image and never re-sends a request whose outcome is unknown (timeout, 429, 5xx); the task fails and the credit is refunded instead.
+- Cost per call comes from the provider response when available, otherwise from `app_configs.provider_prices` keyed by `provider/model` (e.g. `newapi/gpt-image-2.5`). NewAPI reports no cost, so this entry must be set for cost reporting to be meaningful.
 
 ## 9. Test matrix for the credit + task core
 

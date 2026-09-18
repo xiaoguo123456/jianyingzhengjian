@@ -1,4 +1,4 @@
-// migrate: `up` applies the schema (GORM AutoMigrate in V1, see migrations/README.md), `seed` loads catalogue + admin.
+// migrate: `up` applies the versioned PostgreSQL SQL (see migrations/README.md), `seed` loads catalogue + admin.
 package main
 
 import (

@@ -1,4 +1,4 @@
-# 简影后端部署
+# 映己后端部署
 
 ## 环境与入口
 
@@ -17,9 +17,9 @@
 2. 创建 GitHub `test` 与 `production` 环境。生产由 `prod.yml` 的手动入口控制，测试无需审批。
 3. 在服务器的独立目录准备 `.env`，参考本目录示例，权限必须为 `600`。密钥不提交 Git。
 4. 测试使用 `DEPLOY_ENV=test`、`APP_ENV=staging`、端口 `8013`、网络 `weishen-test_default`；生产使用 `DEPLOY_ENV=production`、`APP_ENV=prod`、端口 `8014`、网络 `weishen-prod_default`。
-5. 为现有网关增加 `gateway/` 中对应的简影路由。Nginx 校验成功后重载，保留所有现有路由。测试网关由花花狗项目管理，后续发布必须保留此路由。
+5. 为现有网关增加 `gateway/` 中对应的映己路由。Nginx 校验成功后重载，保留所有现有路由。测试网关由花花狗项目管理，后续发布必须保留此路由。
 
-服务器仅运行简影 API、Worker，复用现有 PostgreSQL 16 与 Redis 实例，不部署数据库容器。测试数据库 `yingji_test`、账号 `yingji_test_app`；生产数据库 `yingji_prod`、账号 `yingji_prod_app`。Redis 测试 DB 5、前缀 `yingji:test:`；生产 DB 6、前缀 `yingji:prod:`。缓存、Asynq 内部队列键及订阅频道均加前缀。禁止清空共享 Redis 或扫描删除其他项目前缀。
+服务器仅运行映己 API、Worker，复用现有 PostgreSQL 16 与 Redis 实例，不部署数据库容器。测试数据库 `yingji_test`、账号 `yingji_test_app`；生产数据库 `yingji_prod`、账号 `yingji_prod_app`。Redis 测试 DB 5、前缀 `yingji:test:`；生产 DB 6、前缀 `yingji:prod:`。缓存、Asynq 内部队列键及订阅频道均加前缀。禁止清空共享 Redis 或扫描删除其他项目前缀。
 
 数据库每进程最多 2 个连接、空闲连接 0；生图并发 1，API/Worker 分别限制 128/384 MB。现有 RDS 未启用 SSL，通过同 VPC 内网以 `sslmode=disable` 连接。发布检查数据库、Redis、API 就绪及 Worker 心跳。
 

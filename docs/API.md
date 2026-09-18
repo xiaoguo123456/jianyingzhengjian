@@ -105,7 +105,7 @@ Returns the collection plus paged templates.
 ## 5. Photos
 
 ### POST /v1/photos
-multipart `file` (jpeg/png/heic, ≤ 10 MB), field `module`.
+multipart `file` (jpeg/png/webp, ≤ 10 MB), field `module`.
 Runs face check synchronously (target < 2 s).
 Response 201
 ```json
@@ -179,7 +179,7 @@ Request `{ "bg": "#FFFFFF" }` → 201 `{ "work": Work }` (synchronous composite 
 Response 201
 ```json
 { "share": { "id": "01J…", "path": "/pages/template-detail/index?id=…&s=01J…",
-             "title": "用「韩系清透」生成了这张，试试同款", "image_url": "https://cdn…/shares/01J….jpg",
+             "title": "用「韩系清透」生成了这张，试试同款", "image_url": "https://…signed OSS URL, 24 h…/shares/01J….jpg",
              "poster_url": "https://…signed… (poster type only)" } }
 ```
 Work and poster shares copy the work thumbnail (AI label burned in) to a public object at creation; the client must call this only after the user taps a share action.
@@ -213,7 +213,7 @@ WeChat rewarded-video server callback (enable in the traffic-master console). Ve
 |---|---|---|
 | POST | /auth/login | username + password → token |
 | CRUD | /categories, /specs, /templates, /collections, /banners | status toggle, sort, `is_hot` (max 4 hot specs per module enforced) |
-| POST | /assets | upload cover/sample images to COS `assets/` |
+| POST | /assets | upload cover/sample images to object storage `assets/` (OSS in test/prod; served as 24 h signed URLs) |
 | GET/PUT | /configs | keys from BACKEND_ARCHITECTURE.md §8 |
 | GET | /users?openid= , /users/{id} | with credit balance and ledger |
 | POST | /users/{id}/credits | admin adjust with note (ledger `admin_adjust`) |

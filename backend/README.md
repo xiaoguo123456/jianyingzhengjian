@@ -1,4 +1,4 @@
-# 简影后端（Go）
+# 映己后端（Go）
 
 Gin + GORM（PostgreSQL 16）+ Redis/Asynq。部署方式、环境地址、模板维护与第三方配置见 [部署说明](deploy/README.md)。
 
