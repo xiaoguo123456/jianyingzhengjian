@@ -244,11 +244,12 @@ export const mockApi: Api = {
     if (o.status) list = list.filter((t) => t.status === o.status)
     return paged(list, o.page)
   },
-  async regenerate(taskId, key) {
+  async regenerate(taskId, key, bg) {
     await delay(200)
     const src = mockState.tasks.get(taskId)
     if (!src) throw new ApiError('NOT_FOUND', '', 404)
-    return createTask({ kind: src.kind as any, spec_id: src.spec_id, template_id: src.template_id, photo_id: src.photo_id, params: src.params, notify: false, parent_task_id: taskId, idempotency_key: key })
+    const params = bg && src.kind === 'idphoto' ? { ...src.params, bg } : src.params
+    return createTask({ kind: src.kind as any, spec_id: src.spec_id, template_id: src.template_id, photo_id: src.photo_id, params, notify: false, parent_task_id: taskId, idempotency_key: key })
   },
 
   async works(o) {
@@ -264,14 +265,6 @@ export const mockApi: Api = {
   },
   async work(id) { await delay(120); const w = mockState.works.find((x) => x.id === id); if (!w) throw new ApiError('NOT_FOUND', '', 404); return w },
   async downloadUrl(id) { const w = mockState.works.find((x) => x.id === id); if (!w) throw new ApiError('NOT_FOUND', '', 404); return { url: w.url } },
-  async recolor(id, bg) {
-    await delay(500)
-    const src = mockState.works.find((x) => x.id === id)
-    if (!src) throw new ApiError('NOT_FOUND', '', 404)
-    const w: Work = { ...src, id: shortId('w_'), created_at: now(), meta: { ...src.meta, bg, recolored_from: src.id } }
-    mockState.works.unshift(w)
-    return w
-  },
   async deleteWork(id) { await delay(); mockState.works = mockState.works.filter((w) => w.id !== id) },
 
   async favorites(page = 1) { await delay(); return paged(TEMPLATES.filter((t) => mockState.favorites.has(t.id)).map(card), page) },
@@ -324,13 +317,12 @@ function userObj() {
 function createTask(input: CreateTaskInput) {
   const tpl = input.template_id ? TEMPLATES.find((t) => t.id === input.template_id) : undefined
   const spec = input.spec_id ? SPECS.find((s) => s.id === input.spec_id) : undefined
-  const usesGen = input.kind === 'template' || (input.params.clothing && input.params.clothing !== 'keep') || input.params.beauty === 'light'
-  const cost = usesGen ? tpl?.credit_cost ?? 1 : 0
-  if (usesGen && mockState.daily + mockState.bonus < cost) throw new ApiError('NO_CREDITS', '', 402, { credits: credits() })
-  const refund = usesGen ? consume(cost) : { daily: 0, bonus: 0 }
+  const cost = tpl?.credit_cost ?? 1
+  if (mockState.daily + mockState.bonus < cost) throw new ApiError('NO_CREDITS', '', 402, { credits: credits() })
+  const refund = consume(cost)
   const module: Module = tpl ? tpl.module : 'idphoto'
   const task: Task = {
-    id: shortId('tk_'), status: 'waiting', stage: 'queued', module, kind: input.kind, uses_genmodel: !!usesGen, credits_consumed: cost,
+    id: shortId('tk_'), status: 'waiting', stage: 'queued', module, kind: input.kind, uses_genmodel: true, credits_consumed: cost,
     created_at: now(), started_at: null, finished_at: null, work: null, error: null, refunded: false,
     template_id: input.template_id, spec_id: input.spec_id, photo_id: input.photo_id, params: input.params,
     target_name: tpl?.name || spec?.name || '',

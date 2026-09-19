@@ -14,13 +14,13 @@
     <view class="cost card">
       <view class="cost__row">
         <text class="cost__label">本次消耗</text>
-        <text class="cost__value">{{ flow.usesGenmodel ? `${flow.creditCost} 次生成机会` : '免费' }}</text>
+        <text class="cost__value">{{ flow.creditCost }} 次生成机会</text>
       </view>
       <view class="cost__row">
         <text class="cost__label">可用次数</text>
         <text class="cost__value num">{{ user.total }}</text>
       </view>
-      <view v-if="flow.usesGenmodel && user.total < flow.creditCost" class="cost__hint">
+      <view v-if="user.total < flow.creditCost" class="cost__hint">
         次数不足，点击开始后{{ user.adsEnabled ? '观看一段视频即可获得 1 次' : '请明天再试' }}
       </view>
     </view>
@@ -67,7 +67,7 @@ onShow(() => { user.refreshCredits().catch(() => {}) })
 const clothingName = computed(() => clothing.value.find((c) => c.id === flow.params.clothing)?.name || '保持原服装')
 
 async function start() {
-  track('generate_click', { module: flow.module, uses_genmodel: flow.usesGenmodel })
+  track('generate_click', { module: flow.module })
   let notifyOk = false
   if (notify.value) notifyOk = await subscribe.request(user.config?.subscribe_template_ids.task_finished || '')
   flow.setNotify(notifyOk)

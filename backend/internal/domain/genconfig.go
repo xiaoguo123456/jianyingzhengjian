@@ -2,21 +2,23 @@ package domain
 
 // GenConfig is the template recipe (docs/GENERATION_PIPELINE.md §7.3).
 type GenConfig struct {
-	Engine            string         `json:"engine,omitempty"`
-	Provider          string         `json:"provider,omitempty"`
-	Model             string         `json:"model,omitempty"`
-	Mode              string         `json:"mode"` // img2img | reference | edit
-	Prompt            string         `json:"prompt"`
-	NegativePrompt    string         `json:"negative_prompt,omitempty"`
-	Strength          float64        `json:"strength,omitempty"`
-	Output            *GenOutput     `json:"output,omitempty"`
-	IdentityCheck     bool           `json:"identity_check"`
-	IdentityThreshold float64        `json:"identity_threshold,omitempty"`
-	Post              []PostOp       `json:"post,omitempty"`
-	Style             string         `json:"style,omitempty"` // photo | illustration
-	FallbackProvider  string         `json:"fallback_provider,omitempty"`
-	Extra             map[string]any `json:"extra,omitempty"`
+	Engine           string         `json:"engine,omitempty"`
+	Provider         string         `json:"provider,omitempty"`
+	Model            string         `json:"model,omitempty"`
+	Mode             string         `json:"mode"` // img2img | reference | edit; reference when reference_keys are set
+	Prompt           string         `json:"prompt"`
+	NegativePrompt   string         `json:"negative_prompt,omitempty"`
+	Strength         float64        `json:"strength,omitempty"`
+	ReferenceKeys    []string       `json:"reference_keys,omitempty"` // assets/ images sent with the user photo
+	Output           *GenOutput     `json:"output,omitempty"`
+	Post             []PostOp       `json:"post,omitempty"`
+	Style            string         `json:"style,omitempty"` // photo | illustration
+	FallbackProvider string         `json:"fallback_provider,omitempty"`
+	Extra            map[string]any `json:"extra,omitempty"`
 }
+
+// MaxReferenceImages caps reference_keys per template.
+const MaxReferenceImages = 4
 
 type GenOutput struct {
 	Width  int `json:"width"`
@@ -24,16 +26,9 @@ type GenOutput struct {
 }
 
 type PostOp struct {
-	Op     string `json:"op"` // square_crop | resize | matte_solid_bg
+	Op     string `json:"op"` // square_crop | resize (both centre-crop)
 	Width  int    `json:"width,omitempty"`
 	Height int    `json:"height,omitempty"`
-	Color  string `json:"color,omitempty"`
-}
-
-// CropRule overrides for a spec (docs/GENERATION_PIPELINE.md §7.1).
-type CropRule struct {
-	HeadRatio float64 `json:"head_ratio,omitempty"`
-	TopMargin float64 `json:"top_margin,omitempty"`
 }
 
 // IDPhotoParams are the user-selected parameters of an ID photo task.
@@ -74,9 +69,6 @@ func ClothingByID(id string) *ClothingOption {
 type PhotoCheckResult struct {
 	Passed  bool     `json:"passed"`
 	Faces   int      `json:"faces"`
-	FaceBox [4]int   `json:"face_box"`
 	Reasons []string `json:"reasons"`
-	Blur    float64  `json:"blur"`
-	Luma    float64  `json:"luma"`
 	Gender  string   `json:"gender,omitempty"`
 }

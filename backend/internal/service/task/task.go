@@ -14,7 +14,6 @@ import (
 	"yingji/backend/internal/config"
 	"yingji/backend/internal/domain"
 	gmrouter "yingji/backend/internal/engine/genmodel"
-	"yingji/backend/internal/pipeline/idphoto"
 	"yingji/backend/internal/pkg/apperr"
 	"yingji/backend/internal/pkg/clock"
 	"yingji/backend/internal/pkg/idgen"
@@ -102,10 +101,8 @@ func (s *Service) Create(ctx context.Context, userID string, in CreateInput) (*d
 		t.Module = domain.ModuleIDPhoto
 		t.SpecID = &sp.ID
 		t.Params = domain.MustJSON(in.Params)
-		t.UsesGenmodel = idphoto.UsesGen(in.Params)
-		if t.UsesGenmodel {
-			cost = 1
-		}
+		t.UsesGenmodel = true // every ID photo is drawn by the gen model (D-26)
+		cost = 1
 	case domain.TaskKindTemplate:
 		tp, err := s.catalogue.Template(ctx, in.TemplateID)
 		if err != nil {
@@ -223,7 +220,9 @@ func (s *Service) List(ctx context.Context, userID, status string, page, size in
 }
 
 // Regenerate creates a new task with the same inputs (new seed happens in the pipeline).
-func (s *Service) Regenerate(ctx context.Context, userID, taskID, idemKey string) (*domain.Task, bool, error) {
+// Regenerate creates a new task with the same photo and target. For ID photos a non-empty bg replaces the
+// background colour, which is how a user changes the background (a new gen task, D-26).
+func (s *Service) Regenerate(ctx context.Context, userID, taskID, idemKey, bg string) (*domain.Task, bool, error) {
 	src, err := s.Get(ctx, userID, taskID)
 	if err != nil {
 		return nil, false, err
@@ -236,6 +235,9 @@ func (s *Service) Regenerate(ctx context.Context, userID, taskID, idemKey string
 		in.TemplateID = *src.TemplateID
 	}
 	_ = src.Params.Into(&in.Params)
+	if bg != "" && src.Kind == domain.TaskKindIDPhoto {
+		in.Params.Bg = bg
+	}
 	return s.Create(ctx, userID, in)
 }
 

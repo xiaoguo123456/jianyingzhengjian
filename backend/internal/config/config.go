@@ -54,10 +54,9 @@ type Config struct {
 	COSSecretKey       string `env:"COS_SECRET_KEY" envDefault:""`
 	COSCDNHost         string `env:"COS_CDN_HOST" envDefault:""`
 
-	FaceProvider     string `env:"FACE_PROVIDER" envDefault:"mock"` // mock | tencent
-	TencentSecretID  string `env:"TENCENT_SECRET_ID" envDefault:""`
-	TencentSecretKey string `env:"TENCENT_SECRET_KEY" envDefault:""`
-	TencentRegion    string `env:"TENCENT_REGION" envDefault:"ap-guangzhou"`
+	// Photo check at upload: mock | newapi (multimodal model on the NewAPI gateway).
+	InspectProvider string `env:"INSPECT_PROVIDER" envDefault:"mock"`
+	InspectModel    string `env:"INSPECT_MODEL" envDefault:""`
 
 	GenProviderDefault string `env:"GEN_PROVIDER_DEFAULT" envDefault:"mock"` // mock | volcengine | newapi
 	GenConcurrency     int    `env:"GEN_CONCURRENCY" envDefault:"4"`
@@ -121,20 +120,21 @@ func (c *Config) Validate() error {
 	if c.GenProviderDefault == "newapi" && c.NewAPIKey == "" {
 		return fmt.Errorf("缺少 NEWAPI_API_KEY")
 	}
-	switch c.FaceProvider {
-	case "mock", "tencent", "disabled":
+	switch c.InspectProvider {
+	case "mock":
+	case "newapi":
+		if c.NewAPIKey == "" || c.InspectModel == "" {
+			return fmt.Errorf("照片质检需要 NEWAPI_API_KEY 和 INSPECT_MODEL")
+		}
 	default:
-		return fmt.Errorf("未知视觉服务")
-	}
-	if c.FaceProvider == "tencent" && (c.TencentSecretID == "" || c.TencentSecretKey == "") {
-		return fmt.Errorf("缺少腾讯视觉服务凭据")
+		return fmt.Errorf("未知照片质检服务")
 	}
 	if c.GenConcurrency < 1 || c.DBMaxOpen < 1 || c.DBMaxIdle < 0 || c.DBMaxIdle > c.DBMaxOpen {
 		return fmt.Errorf("并发或连接池配置无效")
 	}
 	if c.IsProd() {
-		if c.GenProviderDefault == "mock" || c.FaceProvider == "mock" {
-			return fmt.Errorf("生产环境禁止模拟生图和人脸检测")
+		if c.GenProviderDefault == "mock" || c.InspectProvider == "mock" {
+			return fmt.Errorf("生产环境禁止模拟生图和照片质检")
 		}
 		if c.StorageDriver != "oss" {
 			return fmt.Errorf("生产环境必须使用 OSS")

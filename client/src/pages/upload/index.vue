@@ -51,12 +51,13 @@ import { computed, ref } from 'vue'
 import { api } from '@/api'
 import { track } from '@/composables/useAnalytics'
 import { env } from '@/config'
-import { compressIfNeeded, go, pickImage, privacy, toast } from '@/platform'
+import { pickPhoto } from '@/composables/usePickPhoto'
+import { compressIfNeeded, go, toast } from '@/platform'
 import { useCatalogueStore } from '@/store/catalogue'
 import { useFlowStore } from '@/store/flow'
 import { useUserStore } from '@/store/user'
 import { MODULE_NAME, type Module, type Spec, type TemplateCard } from '@/types'
-import { ApiError, ERROR_COPY, messageOf } from '@/utils/errors'
+import { ApiError, messageOf } from '@/utils/errors'
 import { mm, px } from '@/utils/format'
 
 const flow = useFlowStore()
@@ -94,12 +95,8 @@ async function ensurePrivacy(): Promise<boolean> {
 
 async function pick(source: 'album' | 'camera') {
   if (!(await ensurePrivacy())) return
-  if (!(await privacy.ensureAuthorized())) return
-  let img
-  try { img = await pickImage(source) } catch (e: any) {
-    if (/deny|auth/i.test(e?.errMsg || '')) toast(source === 'camera' ? ERROR_COPY.CAMERA_DENIED : ERROR_COPY.ALBUM_DENIED)
-    return
-  }
+  const img = await pickPhoto(source)
+  if (!img) return
   const file = await compressIfNeeded(img)
   await uploadFile(file.path, source)
 }

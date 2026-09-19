@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"image"
+	"io"
 	"log/slog"
 	"net/http"
 
@@ -12,15 +13,12 @@ import (
 	"yingji/backend/internal/domain"
 	"yingji/backend/internal/engine/genmodel"
 	"yingji/backend/internal/engine/local"
-	"yingji/backend/internal/engine/vision"
 	"yingji/backend/internal/pkg/apperr"
-	"yingji/backend/internal/provider/face"
 	"yingji/backend/internal/provider/storage"
 )
 
 type Deps struct {
 	Store    storage.ObjectStore
-	Vision   *vision.Engine
 	Gen      *genmodel.Router
 	Cfg      *config.Runtime
 	Log      *slog.Logger
@@ -34,13 +32,12 @@ type State struct {
 	Template *domain.Template
 	Params   domain.IDPhotoParams
 
-	Raw  []byte
-	Img  image.Image
-	Face face.Result
+	Raw    []byte
+	Img    image.Image
+	Gender string // from the upload check; male | female | ""
 
 	Out       *image.NRGBA
 	OutFormat string
-	Alpha     *image.Alpha
 
 	UsedGen     bool
 	Cost        int
@@ -61,7 +58,6 @@ type Output struct {
 	Image       []byte
 	Format      string
 	Thumb       []byte
-	Alpha       []byte
 	Width       int
 	Height      int
 	Cost        int
@@ -98,19 +94,6 @@ func Prepare(st *State, maxSide int) error {
 	return nil
 }
 
-// Detect requires exactly one face.
-func Detect(ctx context.Context, d *Deps, st *State) error {
-	f, err := d.Vision.Detect(ctx, st.Img, st.Raw)
-	if err != nil {
-		return Fail(domain.ErrVision, err)
-	}
-	if f.Faces != 1 {
-		return Fail(domain.ErrNoFace, fmt.Errorf("faces=%d", f.Faces))
-	}
-	st.Face = f
-	return nil
-}
-
 // ReplaceSource swaps the working image after a gen step.
 func ReplaceSource(st *State, raw []byte) error {
 	img, _, err := local.Decode(raw)
@@ -122,16 +105,21 @@ func ReplaceSource(st *State, raw []byte) error {
 	return nil
 }
 
-// Identity compares the original and the generated image; below threshold returns false.
-func Identity(ctx context.Context, d *Deps, original, generated []byte, threshold float64) (bool, float64, error) {
-	score, err := d.Vision.Compare(ctx, original, generated)
+// Asset reads an operator-managed object, e.g. a template reference image.
+func Asset(ctx context.Context, d *Deps, key string) ([]byte, error) {
+	rc, err := d.Store.Get(ctx, key)
 	if err != nil {
-		return false, 0, Fail(domain.ErrVision, err)
+		return nil, Fail(domain.ErrStorage, fmt.Errorf("asset %s: %w", key, err))
 	}
-	return score >= threshold, score, nil
+	defer rc.Close()
+	b, err := io.ReadAll(io.LimitReader(rc, 20<<20))
+	if err != nil {
+		return nil, Fail(domain.ErrStorage, fmt.Errorf("asset %s: %w", key, err))
+	}
+	return b, nil
 }
 
-// Finish encodes the output, thumbnail, alpha and labels (docs/COMPLIANCE.md §3).
+// Finish encodes the output and thumbnail and applies the AI labels (docs/COMPLIANCE.md §3).
 func Finish(d *Deps, st *State, dpi int, meta map[string]any) (*Output, error) {
 	if st.Out == nil {
 		return nil, Fail(domain.ErrProvider, fmt.Errorf("no output image"))
@@ -162,11 +150,6 @@ func Finish(d *Deps, st *State, dpi int, meta map[string]any) (*Output, error) {
 	out.Image = local.AddMetadata(data, format, label, dpi)
 	if out.Thumb, err = local.Thumb(st.Out, 600); err != nil {
 		return nil, Fail(domain.ErrStorage, err)
-	}
-	if st.Alpha != nil {
-		if out.Alpha, err = local.EncodeAlphaPNG(st.Alpha); err != nil {
-			return nil, Fail(domain.ErrStorage, err)
-		}
 	}
 	return out, nil
 }

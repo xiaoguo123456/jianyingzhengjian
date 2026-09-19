@@ -12,8 +12,8 @@ export const useFlowStore = defineStore('flow', {
   state: () => fresh(),
   getters: {
     hasTarget: (s) => !!(s.templateId || s.specId),
-    usesGenmodel: (s) => s.kind === 'template' || s.params.clothing !== 'keep' || s.params.beauty === 'light',
-    creditCost(): number { return this.usesGenmodel ? 1 : 0 },
+    /** Every generation, ID photos included, is drawn by the gen model and costs one credit (D-26). */
+    creditCost: () => 1,
     targetName: (s) => s.templateName || s.spec?.name || '',
   },
   actions: {

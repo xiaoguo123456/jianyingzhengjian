@@ -16,22 +16,22 @@ import (
 	"yingji/backend/internal/config"
 	"yingji/backend/internal/domain"
 	"yingji/backend/internal/engine/local"
-	"yingji/backend/internal/engine/vision"
 	"yingji/backend/internal/pkg/apperr"
 	"yingji/backend/internal/pkg/clock"
 	"yingji/backend/internal/pkg/idgen"
+	"yingji/backend/internal/provider/inspect"
 	"yingji/backend/internal/provider/storage"
 )
 
 type Service struct {
-	db     *gorm.DB
-	cfg    *config.Runtime
-	store  storage.ObjectStore
-	vision *vision.Engine
+	db      *gorm.DB
+	cfg     *config.Runtime
+	store   storage.ObjectStore
+	inspect inspect.Inspector
 }
 
-func New(db *gorm.DB, cfg *config.Runtime, store storage.ObjectStore, v *vision.Engine) *Service {
-	return &Service{db: db, cfg: cfg, store: store, vision: v}
+func New(db *gorm.DB, cfg *config.Runtime, store storage.ObjectStore, in inspect.Inspector) *Service {
+	return &Service{db: db, cfg: cfg, store: store, inspect: in}
 }
 
 // Upload validates, checks and stores an original. Rejections return PHOTO_REJECTED with reasons.
@@ -52,35 +52,25 @@ func (s *Service) Upload(ctx context.Context, userID string, module domain.Modul
 	minSide := s.cfg.Int(ctx, "photo_min_side_px")
 	if b.Dx() < minSide || b.Dy() < minSide {
 		check.Reasons = append(check.Reasons, "low_resolution")
+		return nil, &check, apperr.PhotoRejected(check.Reasons)
 	}
-	f, err := s.vision.Detect(ctx, img, data)
+	// The multimodal check replaces face detection: face count, gender and quality issues in one call.
+	small, err := local.EncodeJPEG(local.Downscale(img, 1024), 85)
+	if err != nil {
+		return nil, nil, apperr.Internal(err)
+	}
+	rep, err := s.inspect.Inspect(ctx, small)
 	if err != nil {
 		return nil, nil, apperr.Transient("VISION_ERROR", err).WithMessage("照片检测暂时不可用，请稍后再试")
 	}
-	check.Faces = f.Faces
-	check.Gender = f.Gender
+	check.Faces, check.Gender = rep.Faces, rep.Gender
 	switch {
-	case f.Faces == 0:
+	case rep.Faces == 0:
 		check.Reasons = append(check.Reasons, "no_face")
-	case f.Faces > 1:
+	case rep.Faces > 1:
 		check.Reasons = append(check.Reasons, "multiple_faces")
-	default:
-		check.FaceBox = [4]int{f.Box.Min.X, f.Box.Min.Y, f.Box.Max.X, f.Box.Max.Y}
-		if float64(f.Box.Dy())/float64(b.Dy()) < s.cfg.Float(ctx, "face_min_ratio") {
-			check.Reasons = append(check.Reasons, "face_too_small")
-		}
-		if f.Occluded {
-			check.Reasons = append(check.Reasons, "occluded")
-		}
-		check.Luma = local.MeanLuma(img, f.Box)
-		if check.Luma < s.cfg.Float(ctx, "dark_min_luma") {
-			check.Reasons = append(check.Reasons, "too_dark")
-		}
 	}
-	check.Blur = local.BlurScore(img)
-	if check.Blur < s.cfg.Float(ctx, "blur_min_var") {
-		check.Reasons = append(check.Reasons, "blurry")
-	}
+	check.Reasons = append(check.Reasons, rep.Issues...)
 	check.Passed = len(check.Reasons) == 0
 	if !check.Passed {
 		return nil, &check, apperr.PhotoRejected(check.Reasons)

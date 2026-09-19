@@ -11,12 +11,13 @@
 | Queue / cache | Redis 7 + Asynq | Asynq gives retries, timeouts, uniqueness and scheduled jobs with zero extra infrastructure. The Redis instance is shared, so every key, Asynq queue key and pub/sub channel carries the `REDIS_PREFIX` namespace (`internal/pkg/redisx`) |
 | Object storage | Alibaba Cloud OSS (`alibabacloud-oss-go-sdk-v2`); a local-disk driver for dev | Same cloud as the servers and database; internal endpoint for uploads, public endpoint for signed URLs. A COS driver still exists but no environment uses it |
 | Gen model | NewAPI, an OpenAI-compatible gateway, using `/images/edits` with `gpt-image-2.5` | One HTTP integration reaches the image-edit model; provider routing keeps other models pluggable (§7) |
+| Photo check | Multimodal model on the same gateway via `/chat/completions` (`INSPECT_MODEL`) | Replaces face detection with one call per upload; no separate vision vendor (D-26) |
 | Config | Environment variables (`caarlos0/env`) + `app_configs` table for runtime knobs | 12-factor; ops changes without redeploy |
 | Logging | `log/slog` JSON to stdout | Standard library, structured |
 | Metrics | Prometheus client | Standard |
 | Auth | `golang-jwt/jwt/v5` | Standard |
 | Validation | `go-playground/validator` via Gin binding | Standard |
-| Imaging | `disintegration/imaging` for crop/resize/composite; `govips` optional later for speed | Pure Go first, no cgo in V1 |
+| Imaging | `disintegration/imaging` for decode, centre-crop and resize; `govips` optional later for speed | Pure Go first, no cgo in V1 |
 | WeChat | Own small HTTP client in `provider/wechat` (no SDK): code2session, access token cached in Redis, subscribe messages, mediaCheckAsync, wxacode, ad callback signature | Only a handful of endpoints are needed; no third-party dependency |
 | Testing | `testing` against a real PostgreSQL `_ci` database and a local Redis; each test gets its own schema / key prefix (§12) | No container runtime needed in CI beyond GitHub service containers |
 
@@ -44,15 +45,15 @@ backend/
 │   ├── domain/            # entities, enums, error codes — no imports from other internal pkgs
 │   │   ├── models.go      # one GORM model per table (DATA_MODEL.md)
 │   │   ├── types.go       # modules, statuses, stages, task error codes and messages
-│   │   └── genconfig.go   # template recipe (GENERATION_PIPELINE.md §7.3), crop rules, ID-photo params
+│   │   └── genconfig.go   # template recipe (GENERATION_PIPELINE.md §7.3), ID-photo params, photo check result
 │   ├── service/           # use cases; one package per bounded context
 │   │   ├── auth/          # code2session, JWT issue/verify
 │   │   ├── credit/        # ledger, daily reset, consume/refund, ad reward (transactional core)
 │   │   ├── ads/           # ad session create/claim rules
 │   │   ├── catalogue/     # specs, templates, collections, home aggregation
-│   │   ├── photo/         # upload, face check, retention
+│   │   ├── photo/         # upload, multimodal photo check, retention
 │   │   ├── task/          # create (credit + enqueue), query, state transitions
-│   │   ├── work/          # works, download URLs, recolor
+│   │   ├── work/          # works, download URLs, deletion
 │   │   ├── favorite/ event/ profile/ share/
 │   │   ├── notify/        # subscribe message on task finish
 │   │   └── admin/         # admin auth, CRUD, stats
@@ -63,19 +64,17 @@ backend/
 │   │   │   ├── hooks/     # /webhooks/*
 │   │   │   └── dto/       # response shapes, signed URLs for catalogue images
 │   │   └── queue/         # Asynq task types, enqueue helpers, handlers, scheduler
-│   ├── engine/            # three engines behind one step API (GENERATION_PIPELINE.md §2)
-│   │   ├── local/         # pure Go: decode/orient, crop to spec, solid-background composite, square crop, resize, encode, blur/luma checks, AI label + metadata
-│   │   ├── vision/        # detect_face, compare_face, matte — over provider/face and provider/matting
+│   ├── engine/            # GENERATION_PIPELINE.md §2
+│   │   ├── local/         # pure Go: decode/orient, centre-crop and resize, encode, AI label + metadata
 │   │   └── genmodel/      # gen.* ops: provider router, capability check, breaker, fallback, cost capture
 │   ├── pipeline/          # compositions of engine steps, selected by task.kind
-│   │   ├── idphoto/       # prepare → detect → [gen.edit] → crop_spec → matte → composite → export → label
-│   │   ├── template/      # prepare → detect → gen → identity → post ops → export → label
+│   │   ├── idphoto/       # prepare → gen.edit (idphoto_prompt) → fill to spec → export → label
+│   │   ├── template/      # prepare → load references → gen → post ops → fill → export → label
 │   │   ├── poster/        # share poster rendering (SHARING.md §5)
-│   │   └── steps/         # shared State, Deps and step helpers (prepare, detect, identity, finish)
+│   │   └── steps/         # shared State, Deps and step helpers (prepare, asset, finish)
 │   ├── provider/          # adapters to the outside world, each behind an interface defined here
 │   │   ├── wechat/        # code2session, subscribe message, mediaCheckAsync, wxacode, ad callback verify
-│   │   ├── face/          # FaceDetector + FaceComparer: tencent/ (iai DetectFace, CompareFace)
-│   │   ├── matting/       # Matter: tencent/ (portrait segmentation)
+│   │   ├── inspect/       # Inspector: newapi (multimodal chat), mock — upload photo check
 │   │   ├── genmodel/      # GenModel: newapi (default), volcengine, mock
 │   │   └── storage/       # ObjectStore: oss (test/prod), local (dev, served at /files), cos (unused)
 │   ├── pkg/               # small shared utilities: apperr, idgen (ULID), clock, jwt, httpx, breaker, redisx (key prefixing)
@@ -89,7 +88,7 @@ backend/
 └── Makefile
 ```
 
-Dependency direction: `transport → service → provider`. Services use GORM directly on `*gorm.DB` and own their transactions; there is no separate repository layer. Provider interfaces (`face.Detector`, `matting.Matter`, `genmodel.Model`, `storage.ObjectStore`) are defined in their provider packages and chosen once in `internal/app`. `domain` is imported by everyone and imports nothing internal.
+Dependency direction: `transport → service → provider`. Services use GORM directly on `*gorm.DB` and own their transactions; there is no separate repository layer. Provider interfaces (`inspect.Inspector`, `genmodel.Model`, `storage.ObjectStore`) are defined in their provider packages and chosen once in `internal/app`. `domain` is imported by everyone and imports nothing internal.
 
 ## 4. Request lifecycle (api)
 
@@ -166,8 +165,8 @@ Schedules use Asia/Shanghai time. The server runs `GEN_CONCURRENCY + 4` workers 
 
 1. Load the task and move it `waiting → processing` with one conditional update (`started_at`, `stage = processing`); if no row changed, it was already handled and the job returns.
 2. Load the original photo and the spec or template.
-3. Select the pipeline by `task.kind` and run it with a 4 min 30 s deadline. Free tasks (`uses_genmodel=false`) run only `local` and `vision` steps. Pipelines report `stage = finishing` themselves.
-4. Upload the output, a thumbnail and, for ID photos, the alpha matte to object storage (OSS in test/prod).
+3. Select the pipeline by `task.kind` and run it with a 4 min 30 s deadline; the gender from the upload check is passed in for `{gender}`. Pipelines report `stage = finishing` themselves.
+4. Upload the output and a thumbnail to object storage (OSS in test/prod).
 5. In one transaction insert the `works` row and move the task to `success` with `work_id`, `cost_cents`, `provider`, `provider_ref`.
 6. Enqueue `moderation:check` for the work thumbnail and `notify:task-finished`, and grant a pending share reward (D-22).
 
@@ -178,16 +177,9 @@ Moderation runs after success. When WeChat is not configured or storage is local
 ## 7. Provider interfaces
 
 ```go
-// provider/face
-type Detector interface {
-    Detect(ctx context.Context, img image.Image, raw []byte) (Result, error) // Result: Faces, Box, Quality, Gender, Occluded
-}
-type Comparer interface {
-    Compare(ctx context.Context, a, b []byte) (float64, error) // 0..1 similarity of the primary faces
-}
-// provider/matting
-type Matter interface {
-    Matte(ctx context.Context, img image.Image, raw []byte, f face.Result) (*image.Alpha, error) // same size, 255 = person
+// provider/inspect
+type Inspector interface {
+    Inspect(ctx context.Context, jpeg []byte) (Report, error) // Report: Faces, Gender, Issues (fixed vocabulary)
 }
 // provider/genmodel
 type Mode string // "img2img" | "reference" | "edit"
@@ -249,14 +241,13 @@ Provider selection lives in `engine/genmodel`: `templates.gen_config.provider` �
 | `photo_retention_days` | `30` | cleanup |
 | `default_provider` | `mock` | worker (gen model) when `GEN_PROVIDER_DEFAULT` is empty |
 | `provider_prices` | `{}`; set e.g. `{"newapi/gpt-image-2.5": <cents>}` | worker cost capture when the provider returns none (NewAPI never does) |
-| `identity_threshold` | `0.75` | worker identity check |
 | `share_reward_enabled` | `true` | share incentive (D-22), on at launch |
 | `share_reward_daily_cap` | `3` | share incentive |
 | `share_preview_ttl_days` | `90` | share cleanup |
 | `share_show_nickname` | `false` | share landing |
 | `upload_max_bytes` | `10485760` | api |
 | `photo_min_side_px` | `600` | photo check |
-| `face_min_ratio` | `0.08` | photo check (face height / image height) |
+| `idphoto_prompt` | ID photo instruction with `{bg_name}` `{bg_hex}` `{clothing}` `{beauty}` `{ratio}` (full text in `config.Defaults`) | ID photo pipeline; edit to tune ID photos without a release |
 
 ## 9. Security
 
@@ -283,19 +274,18 @@ Built and exercised locally with the `mock` providers and local storage (first a
 |---|---|
 | Login, profile, privacy consent | Verified end to end |
 | Catalogue (home, specs, templates, collections) | Verified end to end |
-| Upload + photo check (resolution, blur, luma, face count) | Verified, including rejections |
-| ID photo pipeline (free path) | Verified: 295×413 PNG, correct DPI metadata |
+| Upload + photo check | Local resolution check and the mock inspector verified; the multimodal check is unit-tested against a fake gateway (`internal/provider/inspect`) and not yet run against a live model |
+| ID photo pipeline | Prompt filling unit-tested (`internal/pipeline/idphoto`); centre-crop to exact spec size unit-tested (`internal/engine/local`); not yet run against the live gateway since D-26 |
 | Template pipeline (gen path) | Verified: credit consumed, AI label burned in, AIGC metadata written |
-| Free recolor | Verified across white / blue / red |
+| Change background (regenerate with `bg`) | Integration-tested (`internal/service/task`); verified in the H5 mock flow |
 | Credit ledger, refunds, idempotency, daily reset | Integration-tested against PostgreSQL (`internal/service/credit`, `internal/service/task`) |
 | Versioned migrations, checksum guard, repeat runs | Tested (`internal/migration`) and run twice plus `seed` in CI |
 | Redis key / queue prefix isolation | Tested (`internal/pkg/redisx`) |
-| Crop geometry | Unit-tested (`internal/engine/local`) |
 | Ad gating with ads disabled | Verified (409 on session create, no-ads daily grant) |
 | Shares, works summary, admin stats and config | Verified end to end |
 | NewAPI image edit (`gpt-image-2.5`) | Verified against the live gateway with a project sample photo |
 | Alibaba Cloud OSS (put, get, sign, delete, prefix isolation) | Verified against the live bucket with `cmd/storagecheck` |
-| Tencent vision, Volcengine gen model, COS storage | Compile only — never called against the live APIs. Production runs `FACE_PROVIDER=disabled` until Tencent credentials are configured, which rejects photo processing |
+| Volcengine gen model, COS storage | Compile only — never called against the live APIs |
 | WeChat login, subscribe messages, mediaCheck, ad callback | Compile only — needs a real AppID |
 
 `backend/scripts/smoke.sh` runs the whole user journey against a running api + worker and is
@@ -306,5 +296,5 @@ deterministic (it sets the test user's balance through the admin API before the 
 - `service/credit` and `service/task` have table-driven tests covering the matrix in GENERATION_PIPELINE.md §9 against a real PostgreSQL. `internal/testutil` accepts only a database whose name ends in `_ci`, creates a schema per test and drops it afterwards; without `TEST_DATABASE_URL` these tests skip.
 - Redis tests accept only a local instance (`TEST_REDIS_ADDR`), use DB 12 and a unique prefix, and never flush the database.
 - CI (`.github/workflows/backend-check.yml`) runs `go test ./...` and `go vet ./...` with PostgreSQL 16 and Redis 7 service containers, then runs `migrate up` twice and `migrate seed` to prove migrations are repeatable.
-- Provider adapters (`newapi`, `oss`, matting) have unit tests with fake HTTP servers or pure helpers.
+- Provider adapters (`newapi` gen and inspect, `oss`) have unit tests with fake HTTP servers or pure helpers.
 - Not yet covered: pipelines with fixture images, handler tests with `httptest`, and an e2e target; `backend/scripts/smoke.sh` is the manual end-to-end check.

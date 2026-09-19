@@ -172,7 +172,7 @@ generating  (usePolling: 2 s, 5 s after 30 s, stop at 5 min)
   └─ failed  → error state with reason + "次数已返还" + retry
 
 result
-  ├─ 保存图片 / 再生成一张 / 换一个模板 / (ID photo) 换背景 (free, instant) / 换服装 (1 credit)
+  ├─ 保存图片 / 再生成一张 / 换一个模板 / (ID photo) 换背景 (regenerate with the new colour, 1 credit) / 换服装 (1 credit)
   └─ 分享 → y-share-sheet (SHARING.md)
 ```
 

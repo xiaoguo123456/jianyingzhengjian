@@ -168,6 +168,10 @@ func (h *handlers) generation(ctx context.Context, t *asynq.Task) error {
 	}
 	st := &steps.State{Task: task, Raw: raw, OnStage: func(s domain.TaskStage) { a.Task.SetStage(ctx, task.ID, s) }}
 	_ = task.Params.Into(&st.Params)
+	var check domain.PhotoCheckResult
+	if photo.CheckResult.Into(&check) == nil {
+		st.Gender = check.Gender
+	}
 	if task.SpecID != nil {
 		if st.Spec, err = a.Catalogue.Spec(ctx, *task.SpecID); err != nil {
 			return a.Task.Fail(ctx, task.ID, domain.ErrProvider, 0)
@@ -209,12 +213,6 @@ func (h *handlers) generation(ctx context.Context, t *asynq.Task) error {
 	}
 	if err := a.Store.Put(ctx, w.ThumbKey, bytes.NewReader(out.Thumb), int64(len(out.Thumb)), "image/jpeg"); err != nil {
 		return a.Task.Fail(ctx, task.ID, domain.ErrStorage, st.Cost)
-	}
-	if out.Alpha != nil {
-		key := "works/" + task.UserID + "/" + w.ID + "_alpha.png"
-		if err := a.Store.Put(ctx, key, bytes.NewReader(out.Alpha), int64(len(out.Alpha)), "image/png"); err == nil {
-			w.AlphaKey = &key
-		}
 	}
 	if err := a.Task.Succeed(ctx, task, w, out.Cost, out.Provider, out.ProviderRef); err != nil {
 		log.Error("succeed failed", "err", err)

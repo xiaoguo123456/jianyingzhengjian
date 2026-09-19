@@ -1,20 +1,16 @@
-// Package work manages generated outputs: listing, download URLs, free recolor, deletion.
+// Package work manages generated outputs: listing, download URLs, deletion.
 package work
 
 import (
-	"bytes"
 	"context"
 	"io"
-	"strings"
 	"time"
 
 	"gorm.io/gorm"
 
 	"yingji/backend/internal/domain"
-	"yingji/backend/internal/pipeline/idphoto"
 	"yingji/backend/internal/pkg/apperr"
 	"yingji/backend/internal/pkg/clock"
-	"yingji/backend/internal/pkg/idgen"
 	"yingji/backend/internal/provider/storage"
 	"yingji/backend/internal/service/catalogue"
 )
@@ -120,67 +116,6 @@ func (s *Service) DownloadURL(ctx context.Context, userID, id string) (string, t
 	return u, clock.Now().Add(urlTTL), err
 }
 
-// Recolor composites the stored alpha over a new background; free and synchronous (D-05).
-func (s *Service) Recolor(ctx context.Context, userID, id, bg string) (*domain.Work, error) {
-	src, err := s.Get(ctx, userID, id)
-	if err != nil {
-		return nil, err
-	}
-	if src.Module != domain.ModuleIDPhoto || src.AlphaKey == nil || src.SpecID == nil {
-		return nil, apperr.BadRequest("该作品不支持换背景")
-	}
-	sp, err := s.catalogue.Spec(ctx, *src.SpecID)
-	if err != nil {
-		return nil, err
-	}
-	var allowed []string
-	_ = sp.BgAllowed.Into(&allowed)
-	ok := false
-	for _, a := range allowed {
-		if strings.EqualFold(a, bg) {
-			ok = true
-			bg = a
-		}
-	}
-	if !ok {
-		return nil, apperr.BadRequest("该规格不支持此背景色")
-	}
-	img, err := s.Bytes(ctx, src.ObjectKey)
-	if err != nil {
-		return nil, apperr.Internal(err)
-	}
-	alpha, err := s.Bytes(ctx, *src.AlphaKey)
-	if err != nil {
-		return nil, apperr.Internal(err)
-	}
-	data, thumb, err := idphoto.Recolor(img, alpha, bg)
-	if err != nil {
-		return nil, apperr.Internal(err)
-	}
-	var meta map[string]any
-	_ = src.Meta.Into(&meta)
-	if meta == nil {
-		meta = map[string]any{}
-	}
-	meta["bg"] = bg
-	meta["recolored_from"] = src.ID
-	w := &domain.Work{ID: idgen.New(), UserID: userID, Module: src.Module, SpecID: src.SpecID,
-		Width: src.Width, Height: src.Height, Meta: domain.MustJSON(meta), AILabel: src.AILabel, ModerationStatus: src.ModerationStatus,
-		AlphaKey: src.AlphaKey, CreatedAt: clock.Now()}
-	w.ObjectKey = "works/" + userID + "/" + w.ID + ".png"
-	w.ThumbKey = "works/" + userID + "/" + w.ID + "_thumb.jpg"
-	if err := s.store.Put(ctx, w.ObjectKey, bytes.NewReader(data), int64(len(data)), "image/png"); err != nil {
-		return nil, apperr.Internal(err)
-	}
-	if err := s.store.Put(ctx, w.ThumbKey, bytes.NewReader(thumb), int64(len(thumb)), "image/jpeg"); err != nil {
-		return nil, apperr.Internal(err)
-	}
-	if err := s.db.WithContext(ctx).Create(w).Error; err != nil {
-		return nil, err
-	}
-	return w, nil
-}
-
 func (s *Service) Delete(ctx context.Context, userID, id string) error {
 	w, err := s.Get(ctx, userID, id)
 	if err != nil {
@@ -188,6 +123,14 @@ func (s *Service) Delete(ctx context.Context, userID, id string) error {
 	}
 	_ = s.store.Delete(ctx, w.ObjectKey)
 	_ = s.store.Delete(ctx, w.ThumbKey)
+	// Works made before D-26 may share an alpha matte with their free recolors; drop it with the last one.
+	if w.AlphaKey != nil {
+		var others int64
+		s.db.WithContext(ctx).Model(&domain.Work{}).Where("alpha_key = ? AND id <> ?", *w.AlphaKey, w.ID).Count(&others)
+		if others == 0 {
+			_ = s.store.Delete(ctx, *w.AlphaKey)
+		}
+	}
 	return s.db.WithContext(ctx).Delete(w).Error
 }
 

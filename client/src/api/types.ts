@@ -60,13 +60,13 @@ export interface Api {
   createTask(input: CreateTaskInput): Promise<{ task: Task; credits: Credits }>
   task(id: string): Promise<Task>
   tasks(q: { status?: string; page?: number }): Promise<Paged<Task>>
-  regenerate(taskId: string, idempotencyKey: string): Promise<{ task: Task; credits: Credits }>
+  /** bg redraws an ID photo on another background (a new task, one credit). */
+  regenerate(taskId: string, idempotencyKey: string, bg?: string): Promise<{ task: Task; credits: Credits }>
 
   works(q: { module?: Module | 'all'; page?: number }): Promise<Paged<Work>>
   worksSummary(): Promise<WorksSummary>
   work(id: string): Promise<Work>
   downloadUrl(id: string): Promise<{ url: string }>
-  recolor(workId: string, bg: string): Promise<Work>
   deleteWork(id: string): Promise<void>
 
   favorites(page?: number): Promise<Paged<TemplateCard>>

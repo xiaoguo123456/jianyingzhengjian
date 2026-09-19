@@ -1,5 +1,5 @@
 export type Module = 'idphoto' | 'pro' | 'portrait' | 'avatar'
-export type TaskKind = 'idphoto' | 'template' | 'idphoto_recolor'
+export type TaskKind = 'idphoto' | 'template'
 export type TaskStatus = 'waiting' | 'processing' | 'success' | 'failed'
 export type TaskStage = 'queued' | 'processing' | 'finishing'
 

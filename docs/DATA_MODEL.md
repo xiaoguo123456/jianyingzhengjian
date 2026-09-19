@@ -104,7 +104,7 @@ Unique index `(kind, ref_type, ref_id)` — this is what makes consume/refund/re
 | bytes | BIGINT | |
 | sha256 | VARCHAR(64) INDEX | dedupe within user |
 | check_status | VARCHAR(16) | `pending`, `passed`, `rejected` |
-| check_result | JSON | `{faces:1, face_bbox:[…], quality:{blur:0.1,dark:false}, reasons:[]}` |
+| check_result | JSON | `{passed:true, faces:1, gender:"female", reasons:[]}` from the upload check (GENERATION_PIPELINE.md §7.4); older rows may also hold `face_box`, `blur`, `luma` |
 | moderation_status | VARCHAR(16) | `pending` (default), `pass`, `risky` — mediaCheckAsync |
 | expires_at | TIMESTAMPTZ(3) | created_at + retention days |
 | created_at | TIMESTAMPTZ(3) | |
@@ -136,7 +136,7 @@ Unique index `(kind, ref_type, ref_id)` — this is what makes consume/refund/re
 | dpi | BIGINT | default 300 |
 | bg_default | VARCHAR(7) | `#FFFFFF` |
 | bg_allowed | JSON | `["#FFFFFF","#438EDB","#FF0000","#808080"]` |
-| crop_rule | JSON NULL | overrides: `{head_ratio:0.62, top_margin:0.10}` |
+| crop_rule | JSON NULL | unused since D-26 (ID photos are centre-cropped from the gen output); kept for old rows |
 | source_note | VARCHAR(255) NULL | where the size was verified (UI-16) |
 | note | VARCHAR(64) NULL | short hint shown on the card |
 | is_hot | BOOLEAN | shows in "常用规格" (max 4) |
@@ -156,7 +156,7 @@ Unique index `(kind, ref_type, ref_id)` — this is what makes consume/refund/re
 | cover_key | VARCHAR(255) | 3:4 (pro/portrait) or 1:1 (avatar) |
 | sample_keys | JSON | example outputs |
 | credit_cost | BIGINT | default 1; price of one task with this template (D-21) |
-| gen_config | JSON | recipe, schema in GENERATION_PIPELINE.md §7.3: `{engine, provider, model, mode, prompt, negative_prompt, strength, output, identity_check, post:[…], style, fallback_provider}` |
+| gen_config | JSON | recipe, schema in GENERATION_PIPELINE.md §7.3: `{engine, provider, model, mode, prompt, negative_prompt, strength, reference_keys:[…], output, post:[…], style, fallback_provider, extra}` |
 | tags | JSON | `["NEW","热门"]` |
 | is_hot | BOOLEAN | |
 | sort | BIGINT | |
@@ -181,23 +181,23 @@ id, module, title, subtitle, image_key, link (JSON: `{type:'idphoto_flow'|'templ
 | user_id | VARCHAR(26) | |
 | idempotency_key | VARCHAR(36) | UNIQUE with user_id |
 | module | VARCHAR(16) | `idphoto`, `pro`, `portrait`, `avatar` |
-| kind | VARCHAR(16) | `idphoto`, `template`, `idphoto_recolor`; recolor is free and synchronous |
+| kind | VARCHAR(16) | `idphoto`, `template` |
 | spec_id | VARCHAR(26) NULL | |
 | template_id | VARCHAR(26) NULL | |
 | photo_id | VARCHAR(26) | |
 | parent_task_id | VARCHAR(26) NULL | regenerate / change clothing lineage |
-| uses_genmodel | BOOLEAN | decided at creation; credits and breaker apply only when true (D-21) |
-| credits_consumed | BIGINT | 0 for free tasks |
+| uses_genmodel | BOOLEAN | always true for new tasks (D-26); false only on free ID photo tasks created before 2026-09-18 |
+| credits_consumed | BIGINT | 1 for ID photos, `templates.credit_cost` for templates; 0 only on legacy free tasks |
 | params | JSON | `{bg:'#438EDB', clothing:'white_shirt', beauty:'natural', seed:…}` |
 | status | VARCHAR(16) | `waiting`, `processing`, `success`, `failed` |
 | stage | VARCHAR(16) NULL | `queued`, `processing`, `finishing`; shown to user |
 | provider | VARCHAR(32) NULL | gen-model provider that produced the output, e.g. `newapi` |
 | provider_ref | VARCHAR(128) NULL | |
 | work_id | VARCHAR(26) NULL | |
-| error_code | VARCHAR(32) NULL | TIMEOUT, PROVIDER_ERROR, CONTENT_REJECTED, NO_FACE, … |
+| error_code | VARCHAR(32) NULL | TIMEOUT, PROVIDER_ERROR, CONTENT_REJECTED, STORAGE_ERROR, … (IDENTITY_MISMATCH, NO_FACE, VISION_ERROR only on legacy rows) |
 | error_message | VARCHAR(255) NULL | |
 | cost_cents | BIGINT | provider cost |
-| consume_ledger_id | VARCHAR(26) NULL | null for free kinds |
+| consume_ledger_id | VARCHAR(26) NULL | set for every new task; null only on legacy free tasks |
 | refund_ledger_id | VARCHAR(26) NULL | |
 | notify_requested | BOOLEAN | subscribe message accepted |
 | created_at / started_at / finished_at | TIMESTAMPTZ(3) | |
@@ -210,12 +210,12 @@ Index `(user_id, created_at)`, `(status, started_at)` for the expiry scheduler.
 |---|---|---|
 | id | VARCHAR(26) PK | |
 | user_id | VARCHAR(26) INDEX | |
-| task_id | VARCHAR(26) UNIQUE, NULL | the task that produced this work; NULL for a free recolor, which creates no task (PostgreSQL treats NULLs as distinct in a unique index) |
+| task_id | VARCHAR(26) UNIQUE, NULL | the task that produced this work; NULL only on legacy free recolors, which created no task (PostgreSQL treats NULLs as distinct in a unique index) |
 | module | VARCHAR(16) | |
 | spec_id / template_id | VARCHAR(26) NULL | |
 | object_key | VARCHAR(255) | `works/{user_id}/{id}.jpg` (PNG for idphoto) |
 | thumb_key | VARCHAR(255) | |
-| alpha_key | VARCHAR(255) NULL | idphoto matte layer for free recolor |
+| alpha_key | VARCHAR(255) NULL | legacy matte layer of ID photos made before D-26; no longer written; deleted with the last work that references it |
 | width / height | BIGINT | |
 | meta | JSON | `{bg:'#438EDB', clothing:'white_shirt', width_mm, height_mm, dpi, label:{visible:true, metadata:true}}` |
 | ai_label | BOOLEAN | AI-generated label applied (COMPLIANCE.md §3.2) |
@@ -274,10 +274,10 @@ Owned by `cmd/migrate`: version (file name) PK, checksum (SHA-256 of the file), 
 
 1. `credit_ledger` unique `(kind, ref_type, ref_id)` guarantees at most one consume and one refund per task and one reward per ad session.
 2. A task with `consume_ledger_id` set and `status = failed` must have `refund_ledger_id` set, and a task whose work is `risky` must be `failed/CONTENT_REJECTED` (both checked by the `consistency:refund` job every 30 minutes). No task stays `waiting` past `task_queue_timeout_seconds` or `processing` past `task_timeout_seconds` (expiry scheduler).
-3. `works.task_id` is unique where present: at most one output per task. "Regenerate" creates a new task; a free recolor creates a work with `task_id = NULL` and `meta.recolored_from` pointing at the source work.
+3. `works.task_id` is unique where present: at most one output per task. "Regenerate" (including a background change) creates a new task. Legacy free recolors have `task_id = NULL` and `meta.recolored_from`.
 4. `photos.expires_at` drives cleanup; works never reference the original's object key, they hold their own copy.
 5. `specs.is_hot = true` rows are limited to 4 per module by the admin API, matching PRD 5.3.
-6. `tasks.uses_genmodel = false` implies `consume_ledger_id IS NULL` and `credits_consumed = 0`; `uses_genmodel = true` implies `credits_consumed = templates.credit_cost` (or 1 for spec tasks) at creation.
+6. New tasks have `uses_genmodel = true` and `credits_consumed = templates.credit_cost` (or 1 for spec tasks) at creation, with a consume row. Legacy rows with `uses_genmodel = false` have `consume_ledger_id IS NULL` and `credits_consumed = 0`.
 7. A `share` with `type IN ('work','poster')` must reference a work owned by `user_id`; deleting the work revokes the share and deletes `preview_key` / `poster_key` objects.
 8. `credit_ledger` rows with `kind = share_reward` are unique per `(ref_type='user', ref_id=acquired_user_id)`.
 

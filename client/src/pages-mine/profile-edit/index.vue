@@ -26,7 +26,8 @@
 import { onLoad } from '@dcloudio/uni-app'
 import { ref } from 'vue'
 import { api } from '@/api'
-import { back, pickImage, toast } from '@/platform'
+import { pickPhoto } from '@/composables/usePickPhoto'
+import { back, toast } from '@/platform'
 import { useUserStore } from '@/store/user'
 import { messageOf } from '@/utils/errors'
 
@@ -37,7 +38,7 @@ const avatarPath = ref('')
 const saving = ref(false)
 onLoad(async () => { await user.ready(); nickname.value = user.user?.nickname || ''; avatar.value = user.user?.avatar_url || '' })
 function onChooseAvatar(e: any) { avatar.value = e.detail.avatarUrl; avatarPath.value = e.detail.avatarUrl }
-async function pickAvatar() { try { const img = await pickImage('album'); avatar.value = img.path; avatarPath.value = img.path } catch { /* cancelled */ } }
+async function pickAvatar() { const img = await pickPhoto('album'); if (img) { avatar.value = img.path; avatarPath.value = img.path } }
 async function save() {
   saving.value = true
   try { user.user = await api.updateProfile({ nickname: nickname.value.trim(), avatar_path: avatarPath.value || undefined }); toast('已保存', 'success'); back() } catch (e) { toast(messageOf(e)) } finally { saving.value = false }

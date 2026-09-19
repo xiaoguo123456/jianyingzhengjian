@@ -27,7 +27,7 @@
             <view class="swatch__color" :style="{ background: c, borderColor: c === '#FFFFFF' ? '#CBD5E1' : c }" />
             <view class="swatch__name">{{ bgName(c) }}</view>
           </view>
-          <view class="swatch__free">免费，即时</view>
+          <view class="swatch__free">重新生成，消耗 1 次</view>
         </view>
         <view class="clothing card" hover-class="act--hover" @tap="changeClothing">
           <y-icon name="shirt" :size="40" />
@@ -106,11 +106,18 @@ function changeTemplate() {
   if (work.value.module === 'idphoto') return go('/pages/spec-library/index')
   go(`/pages/template-list/index?module=${work.value.module}&title=${encodeURIComponent('换一个模板')}`)
 }
+/** A new background is a new generation from the original photo (D-26). */
 async function recolor(bg: string) {
   if (!work.value || work.value.meta.bg === bg) return
+  if (!work.value.task_id) return toast('这张作品不支持换背景，请重新生成')
+  const ok = await new Promise<boolean>((resolve) => uni.showModal({
+    title: `换成${bgName(bg)}背景`, content: '会用原照片重新生成一张，消耗 1 次生成机会。', confirmText: '重新生成',
+    success: (r) => resolve(!!r.confirm), fail: () => resolve(false),
+  }))
+  if (!ok) return
   track('recolor_click', { work_id: work.value.id, bg })
-  uni.showLoading({ title: '处理中' })
-  try { work.value = await api.recolor(work.value.id, bg) } catch (e) { toast(messageOf(e)) } finally { uni.hideLoading() }
+  const t = await gen.submit(() => api.regenerate(work.value!.task_id, uuid(), bg))
+  if (t) replace(`/pages/generating/index?task_id=${t.id}`)
 }
 function changeClothing() {
   if (!work.value?.spec) return
@@ -153,7 +160,7 @@ async function savePoster() {
 .swatch__color { width: 72rpx; height: 72rpx; border-radius: 50%; border: 4rpx solid; box-sizing: border-box; margin: 0 auto 6rpx; }
 .swatch--on .swatch__color { box-shadow: 0 0 0 4rpx #fff, 0 0 0 8rpx $color-primary; }
 .swatch__name { font-size: 22rpx; color: $color-text-2; }
-.swatch__free { margin-left: auto; font-size: 22rpx; color: $color-success; }
+.swatch__free { margin-left: auto; font-size: 22rpx; color: $color-text-3; }
 .clothing { display: flex; align-items: center; padding: 20rpx 24rpx; margin-top: 16rpx; }
 .clothing__text { flex: 1; padding-left: 16rpx; }
 .clothing__title { font-size: $font-body; font-weight: 600; }

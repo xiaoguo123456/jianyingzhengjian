@@ -1,4 +1,6 @@
-// Package template implements the gen-model pipeline for pro / portrait / avatar (docs/GENERATION_PIPELINE.md §7.2).
+// Package template implements the gen-model pipeline for pro / portrait / avatar (docs/GENERATION_PIPELINE.md §7.2):
+// the template prompt, the user photo and the template's reference images go to the gen model in one call,
+// then the result is centre-cropped to the output size.
 package template
 
 import (
@@ -26,56 +28,36 @@ func Run(ctx context.Context, d *steps.Deps, st *steps.State) (*steps.Output, er
 	if err := steps.Prepare(st, 2048); err != nil {
 		return nil, err
 	}
-	if err := steps.Detect(ctx, d, st); err != nil {
-		return nil, err
+	var refs [][]byte
+	for _, key := range cfg.ReferenceKeys {
+		b, err := steps.Asset(ctx, d, key)
+		if err != nil {
+			return nil, err
+		}
+		refs = append(refs, b)
 	}
-	original := st.Raw
 
 	st.Stage(domain.StageProcessing)
 	mode := gm.Mode(cfg.Mode)
-	if mode == "" {
-		mode = gm.ModeImg2Img
+	switch {
+	case len(refs) > 0:
+		mode = gm.ModeReference
+	case mode == "":
+		mode = gm.ModeEdit
 	}
 	req := gm.Request{
-		Mode: mode, Source: st.Raw, Prompt: strings.ReplaceAll(cfg.Prompt, "{gender}", st.Face.Gender),
+		Mode: mode, Source: st.Raw, References: refs, Prompt: strings.ReplaceAll(cfg.Prompt, "{gender}", genderWord(st.Gender)),
 		NegativePrompt: cfg.NegativePrompt, Strength: cfg.Strength, Model: cfg.Model, Seed: rand.Int63(), Extra: cfg.Extra,
 	}
 	if cfg.Output != nil {
 		req.Width, req.Height = cfg.Output.Width, cfg.Output.Height
 	}
-	threshold := cfg.IdentityThreshold
-	if threshold <= 0 {
-		threshold = d.Cfg.Float(ctx, "identity_threshold")
+	res, provider, err := d.Gen.Run(ctx, cfg.Provider, cfg.FallbackProvider, req)
+	if err != nil {
+		return nil, mapGenErr(err)
 	}
-
-	var res gm.Result
-	var provider string
-	var err error
-	for attempt := 0; attempt < 2; attempt++ {
-		res, provider, err = d.Gen.Run(ctx, cfg.Provider, cfg.FallbackProvider, req)
-		if err != nil {
-			return nil, mapGenErr(err)
-		}
-		st.UsedGen, st.Provider, st.ProviderRef, st.Seed = true, provider, res.ProviderRef, res.Seed
-		st.Cost += res.CostCents
-		if !cfg.IdentityCheck || cfg.Style == "illustration" {
-			break
-		}
-		ok, score, ierr := steps.Identity(ctx, d, original, res.Image, threshold)
-		if ierr != nil {
-			return nil, ierr
-		}
-		if ok {
-			break
-		}
-		if attempt == 1 {
-			return nil, steps.Fail(domain.ErrIdentityMismatch, fmt.Errorf("score %.2f < %.2f", score, threshold))
-		}
-		if req.Strength > 0.15 {
-			req.Strength -= 0.1
-		}
-		req.Seed = rand.Int63()
-	}
+	st.UsedGen, st.Provider, st.ProviderRef, st.Seed = true, provider, res.ProviderRef, res.Seed
+	st.Cost += res.CostCents
 	if err := steps.ReplaceSource(st, res.Image); err != nil {
 		return nil, err
 	}
@@ -89,36 +71,15 @@ func Run(ctx context.Context, d *steps.Deps, st *steps.State) (*steps.Output, er
 			if side == 0 {
 				side = 1024
 			}
-			f, err := d.Vision.Detect(ctx, out, nil)
-			if err != nil {
-				f = st.Face
-			}
-			out = local.SquareCropFace(out, f.Box, side)
+			out = local.Fill(out, side, side)
 		case "resize":
 			if op.Width > 0 && op.Height > 0 {
 				out = local.Fill(out, op.Width, op.Height)
 			}
-		case "matte_solid_bg":
-			raw, _ := local.EncodeJPEG(out, 95)
-			f, err := d.Vision.Detect(ctx, out, raw)
-			if err != nil {
-				f = st.Face
-			}
-			alpha, err := d.Vision.Matte(ctx, out, raw, f)
-			if err != nil {
-				return nil, steps.Fail(domain.ErrVision, err)
-			}
-			color := op.Color
-			if color == "" {
-				color = "#FFFFFF"
-			}
-			if out, err = local.CompositeSolid(out, alpha, color); err != nil {
-				return nil, steps.Fail(domain.ErrProvider, err)
-			}
 		}
 	}
 	if st.Template.Module == domain.ModuleAvatar && out.Bounds().Dx() != out.Bounds().Dy() {
-		out = local.SquareCropFace(out, st.Face.Box, 1024)
+		out = local.Fill(out, 1024, 1024)
 	}
 	if cfg.Output != nil && cfg.Output.Width > 0 && cfg.Output.Height > 0 {
 		out = local.Fill(out, cfg.Output.Width, cfg.Output.Height)
@@ -130,6 +91,17 @@ func Run(ctx context.Context, d *steps.Deps, st *steps.State) (*steps.Output, er
 	}
 	meta := map[string]any{"template_id": st.Template.ID, "seed": st.Seed, "provider": provider, "mode": string(mode)}
 	return steps.Finish(d, st, 0, meta)
+}
+
+// genderWord fills {gender} in template prompts; empty when the upload check could not tell.
+func genderWord(g string) string {
+	switch g {
+	case "male":
+		return "男性"
+	case "female":
+		return "女性"
+	}
+	return ""
 }
 
 func mapGenErr(err error) error {

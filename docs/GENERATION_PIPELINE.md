@@ -1,43 +1,38 @@
 # Generation Pipeline — Engines, Credits, Ads, Tasks
 
-This document is the executable version of PRD sections 2.3, 7–8, 22–26 and 36–37 with the decisions from DECISIONS.md applied. The image-generation large model ("gen model") is the primary engine for anything that **creates or changes** image content; cheap deterministic engines handle everything that only **processes** an image (D-21).
+This document is the executable version of PRD sections 2.3, 7–8, 22–26 and 36–37 with the decisions from DECISIONS.md applied. The image-generation large model ("gen model") draws every output, ID photos included; local code only resizes, crops, labels and exports what the model returns (D-26, which revises D-21).
 
 ## 1. Principle
 
-> A credit is reserved in the database **before** any gen-model call, and refunded whenever the task does not deliver a usable result, whatever the reason (D-25). Operations that do not need the gen model cost no credit and never call it.
+> A credit is reserved in the database **before** any gen-model call, and refunded whenever the task does not deliver a usable result, whatever the reason (D-25). Every task calls the gen model once and costs its credit price (D-26).
 
-## 2. Engines and operation routing (D-21)
+## 2. Models and operation routing (D-26)
 
-Three engines sit behind one `engine` package in the worker:
+Two model calls and one local engine, nothing else:
 
-| Engine | What it is | Cost profile | Latency |
-|---|---|---|---|
-| `local` | Pure Go imaging: orient, resize, crop, composite, export, label, thumbnail | ~0 | ms |
-| `vision` | Narrow per-call cloud APIs: face detect + attributes, face compare, portrait matting | ¥0.001–0.01 per call | < 1 s |
-| `genmodel` | Large image model via provider adapters (img2img, reference-guided, mask edit) | ¥0.1–1 per image | 5–40 s |
+| Component | What it is | When | Cost profile | Latency |
+|---|---|---|---|---|
+| Photo check (`provider/inspect`) | Multimodal chat model on the NewAPI gateway (`INSPECT_MODEL`) | once per upload | a few fen per call | 2–5 s |
+| Gen model (`engine/genmodel`) | Image-edit model on the NewAPI gateway (`gpt-image-2.5`) via provider adapters | once per task | ¥0.1–1 per image | 20–60 s |
+| `local` engine | Pure Go imaging: decode/orient, centre-crop and resize, export, AI label, thumbnail | every output | ~0 | ms |
+
+There is no face detection, face comparison or matting service.
 
 Operation catalogue. Every user-facing feature maps to one row; new features are added here first.
 
-| Operation | Engine | Credit | Used by |
+| Operation | Runs on | Credit | Used by |
 |---|---|---|---|
-| `detect_face` | vision | 0 | upload check, every pipeline |
-| `compare_face` | vision | 0 | identity check after generation |
-| `matte` | vision | 0 | ID photo, avatar background swap to solid colour |
-| `crop_spec` | local | 0 | ID photo |
-| `composite_solid_bg` | local | 0 | ID photo, free recolor |
-| `square_crop` / `resize` / `export` / `label` | local | 0 | every output |
-| `gen.img2img` | genmodel | 1 | professional, portrait, avatar styles |
-| `gen.reference` | genmodel | 1 | same, when the provider supports subject/face reference for better identity |
-| `gen.edit` (mask or instruction) | genmodel | 1 | ID clothing swap, avatar hairstyle, scene background for professional photos |
-| `gen.retouch` (low strength) | genmodel | included in the task | "轻度" beauty; never a separate credit |
-| `gen.upscale` | genmodel | 0 in V1 (not offered) | reserved |
+| `inspect` | photo check | 0 | upload: face count, gender, quality issues |
+| `gen.edit` (instruction) | gen model | 1 | every ID photo: background colour, clothing, retouch and ID composition in one instruction |
+| `gen.edit` / `gen.reference` | gen model | `credit_cost` | professional, portrait, avatar templates; `reference` when the template has reference images |
+| `fill` (centre-crop + resize) / `export` / `label` | local | 0 | every output |
 
 Routing rules:
 
-1. Solid-colour background changes are **never** sent to the gen model; matte once, composite as many times as needed.
-2. Multiple gen operations in one task (e.g. clothing + light retouch) are merged into **one** gen call with a combined instruction when the provider supports it; otherwise executed in sequence but still billed as one credit.
-3. `templates.credit_cost` (default 1) is the credit price of a template task; a spec task costs 1 only if it includes a gen operation (clothing ≠ keep or beauty = light), otherwise 0.
-4. A task declares up front whether it will touch the gen model (`tasks.uses_genmodel`), so credit reservation and the 503 breaker check happen only for those tasks.
+1. One task is one gen call. Background colour, clothing and "轻度" retouch for an ID photo are written into a single instruction built from `app_configs.idphoto_prompt`.
+2. A spec task costs 1 credit; a template task costs `templates.credit_cost` (default 1).
+3. Changing an ID photo's background is a new task from the original photo (`POST /v1/tasks/{id}/regenerate` with `bg`) and costs 1 credit; there is no free recolor.
+4. Every task has `uses_genmodel = true`, so credit reservation and the 503 check apply to all of them.
 
 ## 3. Credit state (D-01, D-02)
 
@@ -94,7 +89,7 @@ On success: ledger `ad_reward` (+1 bonus), session → `claimed`, `ad_rewards_to
                                                                           └──────────┘
 ```
 
-Free tasks (no gen model: ID photo with original clothing, recolor) run the same state machine but skip the ledger; ID photo without gen typically completes in under 3 s, so the client still polls but usually sees `success` on the first poll. Recolor is executed synchronously in the API (D-05).
+Every task, ID photos included, reserves its credit at creation and calls the gen model, so all tasks take the 20–60 s path; there are no free or synchronous tasks (D-26).
 
 Stages shown while `processing`: `queued` (照片处理中) → `processing` (正在生成) → `finishing` (正在优化结果). No percentage.
 
@@ -107,70 +102,55 @@ Transitions use `UPDATE … WHERE id=? AND status=?` so a late duplicate worker 
 | Gen provider 5xx / timeout on first call | retry once (fallback provider if configured), then `failed/PROVIDER_ERROR` | refund | 本次生成失败，生成次数已返还，请重新尝试。 |
 | Provider content-policy rejection | `failed/CONTENT_REJECTED` | refund | 这张照片无法生成，请换一张照片。 |
 | Output flagged by moderation (D-15), also after the task showed `success` | `failed/CONTENT_REJECTED`, work hidden | refund | same |
-| Identity check below threshold after one regeneration | `failed/IDENTITY_MISMATCH` | refund | 生成结果与本人差异较大，请换一张正脸照片。 |
-| No face at pipeline time | `failed/NO_FACE` | refund | 未检测到清晰人脸，请换一张照片。 |
-| Vision API failure (matte / detect) | retry twice, then `failed/VISION_ERROR` | refund if consumed | generic |
+| Reference image missing or unreadable | `failed/STORAGE_ERROR` | refund | generic |
 | Worker crash mid-task | `task:expire-processing` → `failed/TIMEOUT` after 5 min | refund | timeout message |
 | Enqueue failed after commit | stays `waiting`; requeued after 1 min | none | none |
 | Never started within `task_queue_timeout_seconds` (30 min; lost job, worker down) | `failed/TIMEOUT`; a late job skips it | refund | timeout message |
 | Storage failure | `failed/STORAGE_ERROR` | refund | generic |
-| Breaker open at creation (gen tasks only) | 503 before creation | none | 生成服务暂时不可用，请稍后再试。 |
+| Breaker open at creation | 503 before creation | none | 生成服务暂时不可用，请稍后再试。 |
 | Client network timeout on POST /v1/tasks | retry with same `Idempotency-Key` → existing task | one consume only | — |
 
 Refund and status change are one transaction. Every 30 minutes a consistency job refunds any `failed` task with a consume and no refund, rejects any `success` task whose work is `risky`, and logs an error for each.
 
 ## 7. Pipelines
 
-Pipelines are compositions of steps from the operation catalogue. Steps are reusable Go functions; a pipeline is chosen by `task.kind`, and its parameters come from the spec, the template `gen_config`, and the task `params`.
+Pipelines are short Go functions chosen by `task.kind`; their inputs come from the spec, the template `gen_config`, the task `params` and the upload check stored on the photo (`gender`). There is no face detection inside a pipeline: the photo was checked once at upload (§7.4).
 
 ### 7.1 ID photo (`kind = idphoto`)
 
 ```
-prepare      local    orient by EXIF, downscale long side ≤ 3000 px
-detect       vision   exactly 1 face; bbox, landmarks, quality, attrs
-[gen.edit]   genmodel ONLY IF clothing ≠ keep OR beauty = light
-                      instruction from clothing option prompt (+ "light natural skin retouch" when beauty=light)
-                      mask: below-chin region from matte, or instruction-only edit if provider prefers
-                      then: detect again + compare_face against original (threshold cfg, default 0.75)
-crop_spec    local    head_ratio / top_margin rule (below), pad edges if the crop leaves the frame
-matte        vision   alpha mask of the cropped image; stored as works.alpha_key
-composite    local    solid bg from params.bg (must be in spec.bg_allowed); 2 px hair feathering
-export       local    PNG at spec px, sRGB, DPI metadata; 3:4 JPEG thumb
-label        local    metadata label always; visible label only when a gen step ran (COMPLIANCE.md §3)
-upload       —        works/{user}/{id}.png, thumb, alpha
+prepare      local    orient by EXIF, downscale long side ≤ 2048 px
+gen.edit     genmodel user photo + instruction from app_configs.idphoto_prompt, filled with
+                      {bg_name}/{bg_hex} from params.bg (must be in spec.bg_allowed, else spec default),
+                      {clothing} from the clothing option ("keep" → keep the original clothes),
+                      {beauty} ("natural" → no retouch, "light" → light natural retouch),
+                      {ratio} from the spec in mm; size requested as the closest model size to the spec aspect
+fill         local    centre-crop and resize to spec px (e.g. 295×413)
+export       local    PNG with spec DPI (pHYs); JPEG thumbnail
+label        local    visible AI label + AIGC metadata (COMPLIANCE.md §3)
+upload       —        works/{user}/{id}.png, thumb
 ```
 
-Crop rule (defaults; `specs.crop_rule` overrides):
+Credit: 1 for every ID photo. The background colour is drawn by the model, so it is not guaranteed to match the hex value exactly, and head size and position follow the model's composition, not a measured crop rule; `specs.crop_rule` is no longer used. To change the background the user regenerates with another `bg` (1 credit).
 
-```
-est_head_h = 1.45 × face_bbox_h            bbox is chin-to-brow; add crown/hair
-scale      = (spec_h × head_ratio) / est_head_h      head_ratio 0.62
-head_top_y = face_bbox_top − 0.30 × face_bbox_h
-crop_top   = head_top_y − top_margin × (spec_h / scale)  top_margin 0.10
-crop_cx    = face_bbox_center_x
-crop_w, crop_h = spec_w / scale, spec_h / scale
-```
-
-Credit: 0 when clothing = keep and beauty = natural; 1 otherwise. Free recolor (`POST /v1/works/{id}/recolor`) re-runs composite → export → label → upload from the stored alpha.
+Operators tune the ID photo instruction by editing `idphoto_prompt` through `PUT /admin/v1/configs`; no release is needed.
 
 ### 7.2 Template modules (`kind = template`, modules pro / portrait / avatar)
 
 ```
 prepare      local    orient, downscale long side ≤ 2048 px
-detect       vision   exactly 1 face
-gen          genmodel mode from gen_config.mode:
-                      img2img   — source photo + prompt + strength
-                      reference — source photo as subject/face reference + prompt (best identity)
-                      edit      — instruction / mask edit on the source (hairstyle, scene background)
-identity     vision   compare_face(source, output) when gen_config.identity_check = true
-                      below threshold → one regeneration with strength − 0.1, then IDENTITY_MISMATCH
-post         local    ops from gen_config.post, in order (vocabulary: square_crop, resize, matte_solid_bg)
-export       local    JPEG q92 (PNG when the provider returns alpha or style = illustration)
+references   storage  load gen_config.reference_keys (assets/…, at most 4)
+gen          genmodel one call with the user photo, the reference images and the prompt
+                      ({gender} → 男性 / 女性 / empty, from the upload check);
+                      mode = reference when references exist, else gen_config.mode (default edit)
+post         local    ops from gen_config.post, in order (vocabulary: square_crop, resize — both centre-crop)
+fill         local    centre-crop to gen_config.output; avatars always end square
+export       local    JPEG q92 (PNG when the provider returns alpha and style = illustration)
 label        local    metadata + visible label
 upload       —
 ```
 
-Credit: `templates.credit_cost` (default 1). "Regenerate" = same request, new seed. "Change template" = new task, different template, same photo.
+Credit: `templates.credit_cost` (default 1). "Regenerate" = same request, new seed. "Change template" = new task, different template, same photo. Nothing checks automatically that the output still looks like the user; the prompt asks the model to keep the person's features.
 
 ### 7.3 Template `gen_config` schema
 
@@ -179,15 +159,14 @@ Credit: `templates.credit_cost` (default 1). "Regenerate" = same request, new se
   "engine": "genmodel",
   "provider": "newapi",              // optional; falls back to the default provider (GEN_PROVIDER_DEFAULT)
   "model": "gpt-image-2.5",          // optional; falls back to NEWAPI_MODEL
-  "mode": "reference",               // img2img | reference | edit
-  "prompt": "professional corporate headshot, navy suit, soft studio light, neutral grey backdrop, {gender}",
+  "mode": "edit",                    // img2img | reference | edit; forced to reference when reference_keys is set
+  "prompt": "专业半身职业照，深蓝西装、白衬衫，浅灰背景，柔和棚拍光，{gender}，保持人物五官不变",
   "negative_prompt": "text, watermark, extra fingers, distorted face",
   "strength": 0.55,                  // img2img only; not sent by the newapi provider
-  "output": { "width": 1024, "height": 1365 },
-  "identity_check": true,
-  "identity_threshold": 0.75,
-  "post": [ { "op": "resize", "width": 1200, "height": 1600 } ],
-  "style": "photo",                  // photo | illustration (label + identity rules differ)
+  "reference_keys": ["assets/2026/09/01J….jpg"],  // optional, at most 4; upload with POST /admin/v1/assets
+  "output": { "width": 1200, "height": 1600 },
+  "post": [ { "op": "resize", "width": 1200, "height": 1600 } ],  // square_crop | resize, both centre-crop
+  "style": "photo",                  // photo | illustration (output format differs)
   "fallback_provider": "",           // optional; must be a registered provider
   "extra": { "quality": "high" }     // provider pass-through; newapi accepts only quality and background
 }
@@ -195,20 +174,23 @@ Credit: `templates.credit_cost` (default 1). "Regenerate" = same request, new se
 
 With `newapi` the model is asked for the closest supported size by aspect ratio (`1024x1024`, `1024x1536`, `1536x1024`) and the result is then cropped and resized to `output`.
 
-Examples of new products that need **no code change**: a "证件照换发型" template = `mode: edit`, prompt for hairstyle, `post: [crop_spec…]` is not allowed (spec pipelines are code), but an "avatar hairstyle" template is just a row. A "职业照办公室背景" template = `mode: edit` with a background instruction. Anything requiring a new local step is a code change to the step library, not to the pipelines.
+A new product is a template row: a prompt, optionally a few reference images for style, pose or scene, and an output size. For example, a "职业照办公室背景" template is `mode: edit` with a background instruction, and a "复古港风写真" template adds two reference photos of the look. `POST /admin/v1/templates/validate` rejects unknown post ops, more than 4 reference images and references outside `assets/`. Only a new local post-processing step needs code.
 
 ### 7.4 Photo check at upload (`POST /v1/photos`, synchronous)
 
-| Check | Threshold (config) | Reason code |
-|---|---|---|
-| Face count = 1 | — | `no_face`, `multiple_faces` |
-| Face height / image height ≥ 0.08 | `face_min_ratio` | `face_too_small` |
-| Min side ≥ 600 px | `photo_min_side_px` | `low_resolution` |
-| Blur score (Laplacian variance) ≥ threshold | `blur_min_var` | `blurry` |
-| Mean luminance in face region ≥ 60/255 | `dark_min_luma` | `too_dark` |
-| Provider occlusion / mask / sunglasses flags | — | `occluded` |
+The server first checks format (JPEG, PNG, WebP), size and resolution locally; a failure there is rejected without calling any model. It then sends a ≤ 1024 px JPEG copy to the multimodal model (`INSPECT_MODEL` via `/chat/completions`), which returns `{faces, gender, issues[]}` as JSON.
 
-The result is stored on the photo and reused by the pipelines; pipelines re-detect only after a gen step.
+| Check | Where | Reason code |
+|---|---|---|
+| Min side ≥ 600 px | local, `photo_min_side_px` | `low_resolution` |
+| Exactly one real face | model | `no_face`, `multiple_faces` |
+| Face large enough (about 1/8 of the height) | model | `face_too_small` |
+| Face sharp | model | `blurry` |
+| Face bright enough, no strong backlight | model | `too_dark` |
+| No sunglasses, mask, hand or hair over the face | model | `occluded` |
+| A real photo, not a cartoon, screenshot or photo of a screen | model | `not_photo` |
+
+Unknown issue codes from the model are dropped. If the model call fails, the upload returns `VISION_ERROR` ("照片检测暂时不可用") and nothing is stored. The result, including `gender`, is stored in `photos.check_result` and read by the pipelines. `INSPECT_PROVIDER=mock` accepts every photo and is refused in production.
 
 ## 8. Provider routing for the gen model
 
@@ -221,7 +203,7 @@ type GenModel interface {
 ```
 
 - The router picks `gen_config.provider`, verifies `Capabilities()` covers `mode`, else uses `fallback_provider`, else the default provider (`GEN_PROVIDER_DEFAULT`; `app_configs.default_provider` only when the variable is empty). A provider exists in the router only when its API key is configured. A template whose mode no provider supports fails validation in the admin API.
-- Each provider has a circuit breaker (5 failures / 30 s) and a concurrency semaphore; when the chosen provider's breaker is open and a fallback exists, the task uses the fallback; when none is available `POST /v1/tasks` returns 503 for gen tasks.
+- Each provider has a circuit breaker (5 failures / 30 s) and a concurrency semaphore; when the chosen provider's breaker is open and a fallback exists, the task uses the fallback; when none is available `POST /v1/tasks` returns 503 before any credit is taken.
 - Implemented providers: `newapi` — an OpenAI-compatible gateway calling `/images/edits` with `gpt-image-2.5`; the default in test and production and verified against the live service (BACKEND_ARCHITECTURE.md §7). `volcengine` (Seedream) — adapter kept but never called against the live API. `mock` — stamps the input; dev and CI only, refused in production. Before launch, confirm that the model behind the gateway meets the filing requirement in COMPLIANCE.md §3.3; Alibaba Wanx, Tencent Hunyuan Image and Kling Image remain candidates for a filed fallback.
 - `newapi` never degrades to text-to-image and never re-sends a request whose outcome is unknown (timeout, 429, 5xx); the task fails and the credit is refunded instead.
 - Cost per call comes from the provider response when available, otherwise from `app_configs.provider_prices` keyed by `provider/model` (e.g. `newapi/gpt-image-2.5`). NewAPI reports no cost, so this entry must be set for cost reporting to be meaningful.
@@ -232,7 +214,7 @@ type GenModel interface {
 |---|---|---|
 | 1 | New user, ads enabled, first gen task | daily grant applied, consume from daily, task waiting |
 | 2 | User with 0 daily / 0 bonus, gen task | 402 NO_CREDITS, no task row |
-| 3 | User with 0 credits, ID photo with original clothing | task created, no ledger row, uses_genmodel = false |
+| 3 | ID photo with original clothing and no retouch | 1 credit consumed, uses_genmodel = true (D-26); with 0 credits → 402 NO_CREDITS |
 | 4 | Claim valid ad session | +1 bonus, session claimed |
 | 5 | Claim same session twice | second → 422 duplicate |
 | 6 | Claim after 3 s | 422 too_fast |
@@ -245,13 +227,13 @@ type GenModel interface {
 | 13 | Processing past deadline | TIMEOUT + refund |
 | 14 | Day rollover mid-session | daily reset once, ad counter reset |
 | 15 | ads_enabled=false | daily grant = no_ads value; ad session create → 409 |
-| 16 | Breaker open, gen task | 503, no consume |
-| 17 | Breaker open, free ID photo task | task created and runs |
+| 16 | Breaker open, template task | 503, no consume |
+| 17 | Breaker open, ID photo task | 503, no consume |
 | 18 | Template credit_cost = 2 with 1 daily + 1 bonus | consume takes 1 from each; refund restores both |
-| 19 | Free recolor | no ledger row, new work with same alpha |
-| 20 | Identity check fails twice | IDENTITY_MISMATCH, one refund, two provider calls recorded in cost |
+| 19 | Change background (regenerate with `bg`) | new task with the new colour, same photo, spec and clothing; 1 credit |
+| 20 | Upload check finds no face / two faces / not a photo | 422 PHOTO_REJECTED with the reason, nothing stored, no credit |
 | 21 | Acquired user's first gen task succeeds | sharer +1 bonus once; second success → no new row |
-| 22 | Acquired user's first success is a free ID photo | no reward; a later gen success rewards |
+| 22 | Acquired user's first success is an ID photo | reward granted (every task uses the gen model) |
 | 23 | Sharer and acquired user share a unionid or device | no reward, logged |
 | 24 | Sharer at daily share cap | no reward, logged |
 | 25 | Output flagged `risky` after success, callback delivered twice | task `failed/CONTENT_REJECTED`, one refund, recorded cost kept |
@@ -260,4 +242,4 @@ type GenModel interface {
 
 ## 10. Cost accounting
 
-`tasks.cost_cents` sums every gen and vision call in the task. `stats:daily-rollup` aggregates cost per template, per spec and per module; the admin template list shows cost per success and failure rate so expensive or failing templates can be taken offline quickly (PRD 36). Vision-only tasks show near-zero cost, which is the point of the routing rules.
+`tasks.cost_cents` records the gen call of the task (from `provider_prices`, since NewAPI reports no cost). Upload checks are not tied to a task and are not recorded; budget them per upload. `stats:daily-rollup` aggregates cost per template, per spec and per module; the admin template list shows cost per success and failure rate so expensive or failing templates can be taken offline quickly (PRD 36).

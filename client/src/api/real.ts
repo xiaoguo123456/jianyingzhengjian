@@ -39,13 +39,12 @@ export const realApi: Api = {
   createTask: (input) => request('/v1/tasks', { method: 'POST', data: input, headers: { 'Idempotency-Key': input.idempotency_key } }),
   task: (id) => request(`/v1/tasks/${id}`),
   tasks: (o) => request(`/v1/tasks${q(o)}`),
-  regenerate: (id, key) => request(`/v1/tasks/${id}/regenerate`, { method: 'POST', headers: { 'Idempotency-Key': key } }),
+  regenerate: (id, key, bg) => request(`/v1/tasks/${id}/regenerate`, { method: 'POST', headers: { 'Idempotency-Key': key }, data: bg ? { bg } : {} }),
 
   works: (o) => request(`/v1/works${q({ module: o.module === 'all' ? undefined : o.module, page: o.page })}`),
   worksSummary: () => request('/v1/works/summary'),
   work: (id) => request(`/v1/works/${id}`),
   downloadUrl: (id) => request(`/v1/works/${id}/download`),
-  recolor: (id, bg) => request<{ work: any }>(`/v1/works/${id}/recolor`, { method: 'POST', data: { bg } }).then((r) => r.work),
   deleteWork: (id) => request(`/v1/works/${id}`, { method: 'DELETE' }),
 
   favorites: (page = 1) => request(`/v1/favorites${q({ page })}`),

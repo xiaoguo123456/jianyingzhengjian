@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -177,8 +178,24 @@ func (s *Service) ValidateTemplate(ctx context.Context, t *domain.Template) erro
 	if cfg.Provider != "" && !s.gen.Has(cfg.Provider) {
 		return apperr.BadRequest("provider 不存在: " + cfg.Provider)
 	}
+	if len(cfg.ReferenceKeys) > 0 {
+		mode = gm.ModeReference
+	}
 	if _, err := s.gen.Resolve(cfg.Provider, cfg.FallbackProvider, mode); err != nil {
 		return apperr.BadRequest("没有 provider 支持 mode=" + string(mode))
+	}
+	if len(cfg.ReferenceKeys) > domain.MaxReferenceImages {
+		return apperr.BadRequest(fmt.Sprintf("参考图最多 %d 张", domain.MaxReferenceImages))
+	}
+	for _, k := range cfg.ReferenceKeys {
+		if !strings.HasPrefix(k, "assets/") || strings.Contains(k, "..") {
+			return apperr.BadRequest("参考图必须是 /admin/v1/assets 上传的素材: " + k)
+		}
+	}
+	for _, op := range cfg.Post {
+		if op.Op != "resize" && op.Op != "square_crop" {
+			return apperr.BadRequest("不支持的后处理: " + op.Op)
+		}
 	}
 	texts := []string{t.Name}
 	if t.Subtitle != nil {

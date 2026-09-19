@@ -22,14 +22,14 @@
       <y-section-header title="服装" />
       <view class="opts">
         <view class="opt" :class="{ 'opt--on': flow.params.clothing === 'keep' }" @tap="flow.setParams({ clothing: 'keep' })">
-          <view class="opt__name">保持原服装</view><view class="opt__cap">免费</view>
+          <view class="opt__name">保持原服装</view>
         </view>
       </view>
       <view v-for="g in groups" :key="g.key" class="group">
         <view class="group__title">{{ g.label }}</view>
         <view class="opts">
           <view v-for="o in g.items" :key="o.id" class="opt" :class="{ 'opt--on': flow.params.clothing === o.id }" @tap="flow.setParams({ clothing: o.id })">
-            <view class="opt__name">{{ o.name }}</view><view class="opt__cap">消耗 1 次</view>
+            <view class="opt__name">{{ o.name }}</view>
           </view>
         </view>
       </view>
@@ -39,13 +39,13 @@
       <y-section-header title="美化" />
       <view class="seg">
         <view class="seg__item" :class="{ 'seg__item--on': flow.params.beauty === 'natural' }" @tap="flow.setParams({ beauty: 'natural' })">自然<text class="seg__cap">不修饰</text></view>
-        <view class="seg__item" :class="{ 'seg__item--on': flow.params.beauty === 'light' }" @tap="flow.setParams({ beauty: 'light' })">轻度<text class="seg__cap">消耗 1 次</text></view>
+        <view class="seg__item" :class="{ 'seg__item--on': flow.params.beauty === 'light' }" @tap="flow.setParams({ beauty: 'light' })">轻度<text class="seg__cap">自然修饰</text></view>
       </view>
       <view class="hint">保持本人特征，不提供传统美颜参数。</view>
     </view>
 
     <view class="bottom-space" />
-    <y-primary-button sticky :text="flow.usesGenmodel ? '下一步 · 消耗 1 次生成机会' : '下一步 · 免费'" @press="go('/pages/confirm/index')" />
+    <y-primary-button sticky :text="`下一步 · 消耗 ${flow.creditCost} 次生成机会`" @press="go('/pages/confirm/index')" />
   </view>
 </template>
 

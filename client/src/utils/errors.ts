@@ -29,6 +29,11 @@ export const ERROR_COPY: Record<string, string> = {
   NO_FACE: '未检测到清晰人脸，请换一张照片。',
   ALBUM_DENIED: '需要相册权限才能保存图片',
   CAMERA_DENIED: '需要相机权限才能拍照',
+  ALBUM_PICK_DENIED: '需要相册权限才能选择照片',
+  PRIVACY_REFUSED: '需要同意隐私保护指引后才能选择照片',
+  PICK_FAILED: '暂时无法打开相册或相机，请稍后再试',
+  /** Test builds only: explains errno 112 to whoever is testing. */
+  PICK_UNDECLARED_DEV: '小程序后台《用户隐私保护指引》未声明相册或摄像头，请在「设置 → 服务内容声明」中补充后重试。',
 }
 
 export const PHOTO_REASON_COPY: Record<string, string> = {
@@ -39,6 +44,7 @@ export const PHOTO_REASON_COPY: Record<string, string> = {
   too_dark: '光线太暗',
   occluded: '面部有遮挡（墨镜、口罩等）',
   low_resolution: '分辨率过低',
+  not_photo: '请上传真人照片，不支持卡通、截图或翻拍',
 }
 
 export function messageOf(err: unknown): string {

@@ -15,6 +15,20 @@ export function pickImage(source: 'album' | 'camera'): Promise<PickedImage> {
   })
 }
 
+export type PickFailure = 'cancel' | 'privacy' | 'denied' | 'undeclared' | 'other'
+
+/** Classifies a privacy / chooseImage failure. WeChat errno 112: the MP console privacy guideline does not
+    declare the API; 103 / 104: the user refused the privacy popup. */
+export function pickFailure(e: any): PickFailure {
+  const msg = String(e?.errMsg || e?.message || '')
+  const errno = Number(e?.errno)
+  if (/cancel/i.test(msg)) return 'cancel'
+  if (errno === 112 || /not declared/i.test(msg)) return 'undeclared'
+  if (errno === 103 || errno === 104 || /privacy/i.test(msg)) return 'privacy'
+  if (/auth|deny|denied/i.test(msg)) return 'denied'
+  return 'other'
+}
+
 /** Compress above 4 MB where the platform supports it. */
 export async function compressIfNeeded(img: PickedImage): Promise<PickedImage> {
   if (img.size <= 4 * 1024 * 1024) return img

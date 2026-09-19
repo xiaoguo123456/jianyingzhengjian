@@ -4,15 +4,15 @@ Operational details (server addresses, first-time setup, gateway snippets, rollb
 
 ## 1. Environments
 
-| Env | `APP_ENV` | Purpose | Mini Program build | API base URL | Gen model | Vision | Storage |
+| Env | `APP_ENV` | Purpose | Mini Program build | API base URL | Gen model | Photo check | Storage |
 |---|---|---|---|---|---|---|---|
-| `dev` | `dev` | local development | `pnpm dev:mp-weixin` / `dev:h5` (DevTools "不校验合法域名" on) | `http://localhost:8080` | `mock` (or `newapi` with a key) | `mock` | local disk, served at `/files` |
-| test | `staging` | QA, review submission | `pnpm build:test` → 体验版 (trial) | `https://test-www.qhzhiyin.com/yingji` | `newapi` | `mock` allowed | OSS, prefix `yingji/test` |
-| production | `prod` | users | `pnpm build:prod` → 正式版 (release) | `https://platform.qhzhiyin.com/yingji` | `newapi` | `tencent`, or `disabled` until credentials exist | OSS, prefix `yingji/production` |
+| `dev` | `dev` | local development | `pnpm dev:mp-weixin` / `dev:h5` (DevTools "不校验合法域名" on) | `http://localhost:8080` | `mock` (or `newapi` with a key) | `mock` (or `newapi`) | local disk, served at `/files` |
+| test | `staging` | QA, review submission | `pnpm build:test` → 体验版 (trial) | `https://test-www.qhzhiyin.com/yingji` | `newapi` | `mock` allowed; `newapi` to test the real check | OSS, prefix `yingji/test` |
+| production | `prod` | users | `pnpm build:prod` → 正式版 (release) | `https://platform.qhzhiyin.com/yingji` | `newapi` | `newapi` (required) | OSS, prefix `yingji/production` |
 
 The client picks its API base URL at build time from `VITE_APP_ENV` (`client/src/config/index.ts`); `VITE_API_BASE` overrides it for local work. All hosts the Mini Program talks to must have ICP filing and valid TLS and be registered in the MP console: the API domain under request / uploadFile, and the OSS public endpoint domain under downloadFile (images are served as signed OSS URLs).
 
-`config.Validate` refuses to start `APP_ENV=prod` with the `mock` gen model or `mock` vision, with a storage driver other than `oss`, or with signing secrets shorter than 32 characters or containing `change-me`. With `FACE_PROVIDER=disabled` photo processing is rejected, so the generation flow stays closed in production until Tencent vision credentials are configured.
+`config.Validate` refuses to start `APP_ENV=prod` with the `mock` gen model or the `mock` photo check, with a storage driver other than `oss`, or with signing secrets shorter than 32 characters or containing `change-me`. It also refuses `INSPECT_PROVIDER=newapi` without `NEWAPI_API_KEY` and `INSPECT_MODEL`. There is no face detection or matting service to configure (D-26).
 
 ## 2. Infrastructure
 
@@ -75,7 +75,7 @@ Key environment variables (full list: `backend/.env.example`, `backend/deploy/.e
 | `OSS_ACCESS_KEY_ID` / `OSS_ACCESS_KEY_SECRET` | | |
 | `GEN_PROVIDER_DEFAULT` / `GEN_CONCURRENCY` | `newapi` / `1` | |
 | `NEWAPI_BASE_URL` / `NEWAPI_MODEL` / `NEWAPI_API_KEY` | `https://www.ggwk1.online/v1` / `gpt-image-2.5` / | key lives only on the server |
-| `FACE_PROVIDER` / `TENCENT_SECRET_ID` / `TENCENT_SECRET_KEY` / `TENCENT_REGION` | `mock` (test), `disabled` or `tencent` (prod) | |
+| `INSPECT_PROVIDER` / `INSPECT_MODEL` | `newapi` / a vision-capable chat model on the gateway | upload photo check; `mock` allowed outside prod. `FACE_PROVIDER` and `TENCENT_*` are no longer read |
 | `LOG_LEVEL` | `info` | |
 | `ADMIN_INIT_USER` / `ADMIN_INIT_PASSWORD` | | used by the first `migrate seed` only |
 | `POSTER_FONT_PATH` | `/usr/share/fonts/.../NotoSansCJK.ttc` | required for the visible AI label and poster text; `.ttf`, `.otf` and `.ttc` collections are supported. Without it the label degrades to a marker with no text, which does not satisfy COMPLIANCE.md §3.2. The release image is built `FROM scratch` and ships no font yet: add one to the image (or mount it) and set this variable before opening generation in production |
@@ -133,7 +133,7 @@ Dashboards: funnel (PRD §2 metrics), tasks per module, cost per day, ad claims 
 
 - [ ] Commit deployed to test and verified there; production deploy started from `prod.yml` with that SHA.
 - [ ] New migrations are additive and compatible with the previous image.
-- [ ] Server `.env` reviewed (mode `600`): prefixes, OSS endpoints, `FACE_PROVIDER`, `POSTER_FONT_PATH`, secrets.
+- [ ] Server `.env` reviewed (mode `600`): prefixes, OSS endpoints, `INSPECT_PROVIDER` / `INSPECT_MODEL`, `POSTER_FONT_PATH`, secrets.
 - [ ] `app_configs` reviewed: `ads_enabled`, credit numbers, `provider_prices`, retention.
 - [ ] Spec seed data verified (UI-16) and marked with `source_note`.
 - [ ] Domains whitelisted (API and OSS public endpoint); TLS valid > 30 days.

@@ -21,7 +21,7 @@ echo "== home idphoto"; J $API/v1/home/idphoto -H "$AUTH" | python3 -c 'import s
 echo "== home portrait"; J $API/v1/home/portrait -H "$AUTH" | python3 -c 'import sys,json; d=json.load(sys.stdin)["data"]; print("templates:", [t["name"] for t in d["hot_templates"]], "| cover:", d["hot_templates"][0]["cover_url"][:60])'
 echo "== upload"; UP=$(J -X POST $API/v1/photos -H "$AUTH" -F module=idphoto -F file=@testdata/portrait.jpg); echo "$UP" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["code"], d["data"]["check"] if d["code"]=="OK" else d)'
 PHOTO=$(echo "$UP" | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["photo"]["id"])')
-echo "== create free idphoto task"
+echo "== create idphoto task (1 credit)"
 T=$(J -X POST $API/v1/tasks -H "$AUTH" -H 'Content-Type: application/json' -H "Idempotency-Key: smoke-$(date +%s)" -d "{\"kind\":\"idphoto\",\"spec_id\":\"sp_1inch\",\"photo_id\":\"$PHOTO\",\"params\":{\"bg\":\"#438EDB\",\"clothing\":\"keep\",\"beauty\":\"natural\"},\"notify\":false}")
 echo "$T" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["code"], d["data"]["task"]["status"], "uses_gen:", d["data"]["task"]["uses_genmodel"], "credits:", d["data"]["credits"]["total"])'
 TASK=$(echo "$T" | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["task"]["id"])')
@@ -33,7 +33,7 @@ echo "$S" | python3 -c 'import sys,json; d=json.load(sys.stdin)["data"]; w=d.get
 WORK=$(echo "$S" | python3 -c 'import sys,json; d=json.load(sys.stdin)["data"]; print(d["work"]["id"] if d.get("work") else "")')
 if [ -n "$WORK" ]; then
   echo "== download url"; URL=$(J $API/v1/works/$WORK/download -H "$AUTH" | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["url"])'); curl -sS -o /tmp/smoke_work.png "$URL"; file /tmp/smoke_work.png
-  echo "== recolor"; J -X POST $API/v1/works/$WORK/recolor -H "$AUTH" -H 'Content-Type: application/json' -d '{"bg":"#FFFFFF"}' | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["code"], d["data"]["work"]["meta"] if d["code"]=="OK" else d)'
+  echo "== change background (regenerate with bg, 1 credit)"; J -X POST $API/v1/tasks/$TASK/regenerate -H "$AUTH" -H 'Content-Type: application/json' -H "Idempotency-Key: smoke-bg-$(date +%s)" -d '{"bg":"#FFFFFF"}' | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["code"], d["data"]["task"]["id"], d["data"]["task"]["status"]) if d["code"]=="OK" else print(d)'
 fi
 echo "== template task (gen model, consumes credit)"
 T2=$(J -X POST $API/v1/tasks -H "$AUTH" -H 'Content-Type: application/json' -H "Idempotency-Key: smoke2-$(date +%s)" -d "{\"kind\":\"template\",\"template_id\":\"t_interview\",\"photo_id\":\"$PHOTO\",\"params\":{},\"notify\":false}")

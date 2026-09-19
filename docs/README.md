@@ -37,7 +37,7 @@ Not built yet: the admin console (React + Ant Design, optional in V1.0); catalog
 | Milestone | Content | Exit criteria |
 |---|---|---|
 | M0 · Foundations (week 1–2) | Repo scaffolding, auth, credits ledger, spec/template catalogue, admin CRUD, OSS storage | Mini Program logs in, tabs render catalogue from the API |
-| M1 · ID photo (week 3–4) | Upload + photo check, spec crop, matting, background fill, result page, save to album | End-to-end ID photo without ads |
+| M1 · ID photo (week 3–4) | Upload + multimodal photo check, ID photo via the gen model with background and clothing in one instruction, crop to spec, result page, save to album | End-to-end ID photo without ads |
 | M2 · Ads and credits (week 5) | Rewarded video flow, ad sessions, daily grant, refund on failure, subscribe messages | Credit flow passes the test matrix in GENERATION_PIPELINE.md |
 | M3 · Template modules and sharing (week 6–7) | Professional / portrait / avatar via the gen model, template detail, favorites, works library, share cards, posters, invite reward | All four modules generate end to end; a share lands on a template with attribution and the reward test rows 21–24 pass |
 | M4 · Compliance and launch (week 8) | Privacy authorisation, AI labels, content moderation, analytics events, review submission | Passes the COMPLIANCE.md checklist; submitted to WeChat review |

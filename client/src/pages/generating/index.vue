@@ -5,7 +5,7 @@
       <view class="gen__title">正在制作你的{{ MODULE_NAME[task.module] }}…</view>
       <view class="gen__cap">{{ task.target_name }}</view>
       <view class="gen__stages card"><y-stage-indicator :stage="task.stage" :status="task.status" /></view>
-      <view class="gen__hint">{{ task.uses_genmodel ? '通常需要 20–60 秒，可离开页面，完成后在「我的作品」查看' : '证件照处理通常只需几秒' }}</view>
+      <view class="gen__hint">通常需要 20–60 秒，可离开页面，完成后在「我的作品」查看</view>
       <view v-if="polling.timedOut.value" class="gen__hint gen__hint--warn">等待时间较长，稍后可在「生成记录」中查看结果</view>
     </view>
 

@@ -78,7 +78,7 @@ Rules:
 - One reward per acquired user: ledger kind `share_reward`, `ref_type = user`, `ref_id = acquired_user_id`, unique.
 - `share_reward_daily_cap` (default 3) per sharer per day; rewards beyond the cap are silently not granted and logged.
 - No self-referral: the acquired user must not share a `unionid` or `device_id` with the sharer; the sharer's own device ids are recorded from `share_opens`.
-- Only a **gen task** (`uses_genmodel = true`) counts; a free ID photo does not trigger the reward, so the reward always costs the acquired user one ad view or daily credit first.
+- Only a **gen task** (`uses_genmodel = true`) counts. Since D-26 every task is one, so the reward always costs the acquired user one ad view or daily credit first.
 - No reward for opens or installs, which are easy to fake and worthless.
 - The switch stays in config so ops can pause it if abuse shows up; pausing does not revoke credits already granted.
 

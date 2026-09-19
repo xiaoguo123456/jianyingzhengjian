@@ -91,7 +91,6 @@ func New(a *app.App) *gin.Engine {
 		user.GET("/works/summary", pub.WorksSummary)
 		user.GET("/works/:id", pub.Work)
 		user.GET("/works/:id/download", pub.DownloadWork)
-		user.POST("/works/:id/recolor", pub.Recolor)
 		user.DELETE("/works/:id", pub.DeleteWork)
 
 		user.GET("/favorites", pub.Favorites)

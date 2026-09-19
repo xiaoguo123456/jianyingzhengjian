@@ -19,8 +19,8 @@ export interface SharePlatform {
   copyLink(path: string): Promise<void>
 }
 export interface PrivacyPlatform {
-  /** Ensures platform-level privacy authorisation (WeChat privacy popup). */
-  ensureAuthorized(): Promise<boolean>
+  /** Ensures platform-level privacy authorisation (WeChat privacy popup); rejects with the platform error otherwise. */
+  ensureAuthorized(): Promise<void>
 }
 export interface SubscribePlatform {
   request(templateId: string): Promise<boolean>

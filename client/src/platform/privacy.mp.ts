@@ -1,7 +1,7 @@
 import type { PrivacyPlatform } from './types'
 export const privacy: PrivacyPlatform = {
-  ensureAuthorized: () => new Promise((resolve) => {
-    if (typeof wx === 'undefined' || !wx.requirePrivacyAuthorize) return resolve(true)
-    wx.requirePrivacyAuthorize({ success: () => resolve(true), fail: () => resolve(false) })
+  ensureAuthorized: () => new Promise((resolve, reject) => {
+    if (typeof wx === 'undefined' || !wx.requirePrivacyAuthorize) return resolve()
+    wx.requirePrivacyAuthorize({ success: () => resolve(), fail: reject })
   }),
 }

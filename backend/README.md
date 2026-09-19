@@ -37,6 +37,6 @@ TEST_DATABASE_URL='postgres://账号:密码@127.0.0.1:5432/yingji_ci?sslmode=dis
 
 ## 外部服务
 
-NewAPI 图像编辑和 OSS 已通过真实接口验收。微信与腾讯视觉服务仍需本项目凭据和真实业务验证。生产使用 `FACE_PROVIDER=disabled` 时会拒绝图片处理，配置真实视觉服务后才能开放生成流程。
+NewAPI 图像编辑和 OSS 已通过真实接口验收。所有照片都由生图模型生成，不使用人脸检测和抠图服务。上传时由网关上的多模态模型检查人脸与照片质量（`INSPECT_PROVIDER=newapi`、`INSPECT_MODEL`），生产禁止模拟质检。微信服务仍需本项目凭据和真实业务验证。
 
 海报字体通过 `POSTER_FONT_PATH` 配置，必须为可读取的中文字体文件。

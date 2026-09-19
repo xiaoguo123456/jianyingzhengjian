@@ -33,7 +33,7 @@
 - `STORAGE_DRIVER=oss`。测试与生产使用 `yingji/test`、`yingji/production` 前缀。上传可走内网端点，客户端签名始终使用公网端点。
 - 所有 OSS 对象设置为私有；素材链接签名有效期 24 小时，用户原图和作品沿用业务设置的短时签名。不改变共享 Bucket 权限。
 - 微信平台需配置本项目的 AppID/AppSecret，并加入 API 与 OSS 公网域名白名单。测试与生产不开放 `h5_dev` 登录。
-- 正式人脸检测、比对与抠图需配置腾讯服务凭据。测试可显式使用模拟视觉服务，生产禁止模拟；尚未配置时使用 `FACE_PROVIDER=disabled`，拒绝图片处理。
+- 不使用人脸检测、比对与抠图服务。上传质检调用同一网关的多模态模型：`INSPECT_PROVIDER=newapi`，`INSPECT_MODEL` 填网关上可识图的模型名。测试可用 `mock`，生产禁止模拟。旧的 `FACE_PROVIDER`、`TENCENT_*` 变量已不再读取，可从服务器 `.env` 删除。
 
 ## 模板随时新增
 

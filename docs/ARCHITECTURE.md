@@ -30,24 +30,23 @@ PostgreSQL 16      Redis 7          Alibaba Cloud OSS   WeChat APIs
         │              ▼                  │              ad callback)
 ┌───────┴──────────────────────────────────┴───────────────────────────┐
 │  worker  (Go / Asynq)                                                │
-│  engines: local · vision · genmodel  → pipelines · notify · cleanup  │
-└───────┬──────────────────┬───────────────────────────────────────────┘
-        ▼                  ▼
-  vision APIs          gen-model providers (pluggable, with fallback)
-  face detect/compare, NewAPI (gpt-image-2.5) · mock
-  portrait matting
+│  engines: local · genmodel  → pipelines · notify · cleanup           │
+└───────┬──────────────────────────────────────────────────────────────┘
+        ▼
+  NewAPI gateway: image model gpt-image-2.5 (worker; pluggable, with fallback)
+                  multimodal photo check (api, once per upload) · mock in dev
 ```
 
 | Component | Responsibility | Technology |
 |---|---|---|
 | Client | All user-facing UI; WeChat capabilities (login, ads, album, camera, subscribe messages, privacy, share) behind a platform layer | uni-app, Vue 3, TypeScript, Pinia, SCSS; target `mp-weixin` now, `app-plus` / `h5` later |
 | `api` | Public JSON API, admin API, webhooks, auth, credit ledger, task creation | Go, Gin, GORM |
-| `worker` | Executes tasks through three engines (`local` imaging, `vision` APIs, `genmodel` providers), writes results, renders posters, sends notifications, runs scheduled cleanup | Go, Asynq |
+| `worker` | Executes tasks: one gen-model call per task plus local resize/crop, export and labelling; writes results, renders posters, sends notifications, runs scheduled cleanup | Go, Asynq |
 | PostgreSQL | System of record: users, credits, ledger, tasks, works, catalogue, config | PostgreSQL 16 (existing Alibaba Cloud instance, one database per environment) |
 | Redis | Asynq queues, config cache, rate limiting, ad-session TTL index | Redis 7 (shared instance; every key under the `yingji:<env>:` prefix) |
 | Object storage | Originals, works, avatars, catalogue assets and share images — all private, served as signed URLs | Alibaba Cloud OSS (shared bucket, `yingji/<env>` prefix); local disk in dev |
 | Admin console | Catalogue CRUD, config, task and user lookup, funnel dashboard | React + Ant Design (can start as a thin internal tool) |
-| External | Face detection and compare, portrait matting, image generation, WeChat platform | Tencent Cloud iai / portrait segmentation; NewAPI (OpenAI-compatible `/images/edits`, `gpt-image-2.5`) behind capability-based routing and fallback (GENERATION_PIPELINE.md §8); WeChat Open API incl. wxacode |
+| External | Upload photo check, image generation, WeChat platform | NewAPI gateway: a multimodal chat model for the photo check and `gpt-image-2.5` (`/images/edits`) for generation, behind capability-based routing and fallback (GENERATION_PIPELINE.md §2, §8); WeChat Open API incl. wxacode. No face detection or matting service (D-26) |
 
 ## 3. Trust boundaries
 
@@ -76,7 +75,7 @@ Tokens live 24 h. On 401 the client silently re-runs `wx.login` and retries once
 
 ```
 1  Client: pick template/spec → upload photo → POST /v1/photos
-2  api: store original in OSS, run face check, return photo + check result
+2  api: multimodal photo check (face count, quality), store original in OSS, return photo + check result
 3  Client: confirm → POST /v1/tasks
 4  api: credit check fails → 402 NO_CREDITS
 5  Client: POST /v1/ads/sessions → {session_id}; play rewarded video
@@ -89,7 +88,7 @@ Tokens live 24 h. On 401 the client silently re-runs `wx.login` and retries once
 12 Client: polling GET /v1/tasks/{id} sees success → result page
 ```
 
-Failure at step 10 flips the task to `failed`, inserts a `refund` ledger row and notifies. An ID photo with original clothing and no retouch skips steps 4–8 entirely: no credit, no gen model, only local and vision steps (D-21). Details and every edge case: GENERATION_PIPELINE.md.
+Failure at step 10 flips the task to `failed`, inserts a `refund` ledger row and notifies. Every task, ID photos included, goes through steps 3–12; there is no free path (D-26). Details and every edge case: GENERATION_PIPELINE.md.
 
 ### 4.3 Catalogue delivery
 
@@ -102,7 +101,7 @@ Each tab loads `GET /v1/home/{module}` once, which returns banner, hot items, fe
 | User identity, credits, ledger | api | PostgreSQL | Account lifetime |
 | Uploaded originals | user | OSS `originals/` (private, 30 min signed URLs) | 30 days or user deletion (D-16) |
 | Generated works | user | OSS `works/` (private, 10 min signed URLs) + PostgreSQL row | Until user deletion |
-| ID-photo alpha matte | worker | OSS `works/{user}/{id}_alpha.png`, shared by the source work and its free recolors | Should end with the last work that uses it; today deleting a work leaves the matte behind (known gap). Other intermediates stay in memory |
+| Legacy ID-photo alpha matte | — | OSS `works/{user}/{id}_alpha.png`, only on works made before D-26 | Deleted with the last work that references it; new tasks keep all intermediates in memory |
 | Catalogue assets | ops | OSS `assets/` (private, 24 h signed URLs) | Managed in admin |
 | Share previews and posters | user (explicit share action) | OSS `shares/` (private, 24 h signed URLs, AI label burned in) | Until revoke, work deletion, or 90 days after last open |
 | Task records, cost | api/worker | PostgreSQL | Retained for analytics |

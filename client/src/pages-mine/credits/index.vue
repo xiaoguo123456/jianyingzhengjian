@@ -6,7 +6,7 @@
       <view class="rules__title">规则</view>
       <view class="rules__line">· 每天免费赠送 {{ user.adsEnabled ? 1 : 3 }} 次，当天有效</view>
       <view class="rules__line" v-if="user.adsEnabled">· 完整观看一段视频得 1 次，每天最多 {{ user.credits?.ad_reward_daily_cap ?? 10 }} 次，长期有效</view>
-      <view class="rules__line">· 保持原服装且不美化的证件照免费，换背景免费</view>
+      <view class="rules__line">· 每生成一张（含证件照、换背景色）消耗 1 次</view>
       <view class="rules__line">· 生成失败自动返还</view>
     </view>
 

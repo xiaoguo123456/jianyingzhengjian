@@ -123,55 +123,33 @@ func (f *fixture) balance(t *testing.T) credit.Balance {
 	return b
 }
 
-// Row 3: an ID photo with original clothing and no retouch is free and never touches the gen model.
-func TestFreeIDPhotoConsumesNothing(t *testing.T) {
-	f := setup(t, 0) // zero daily credits on purpose
-	tk, existing, err := f.svc.Create(t.Context(), f.uid, f.idPhoto("keep", "natural"))
-	if err != nil {
-		t.Fatalf("create: %v", err)
-	}
-	if existing {
-		t.Error("unexpectedly reported as existing")
-	}
-	if tk.UsesGenmodel {
-		t.Error("UsesGenmodel = true, want false")
-	}
-	if tk.CreditsConsumed != 0 || tk.ConsumeLedgerID != nil {
-		t.Errorf("consumed %d credits (ledger %v), want 0", tk.CreditsConsumed, tk.ConsumeLedgerID)
-	}
-	var ledgerRows int64
-	f.db.Model(&domain.CreditLedger{}).Where("kind = ?", domain.LedgerConsume).Count(&ledgerRows)
-	if ledgerRows != 0 {
-		t.Errorf("consume ledger rows = %d, want 0", ledgerRows)
-	}
-	if f.enq.count() != 1 {
-		t.Errorf("enqueued %d, want 1", f.enq.count())
+// Row 3 (D-26): every ID photo is drawn by the gen model and costs one credit, whatever the options.
+func TestIDPhotoAlwaysCostsOneCredit(t *testing.T) {
+	for _, opt := range [][2]string{{"keep", "natural"}, {"m_black_suit", "natural"}, {"keep", "light"}} {
+		t.Run(opt[0]+"/"+opt[1], func(t *testing.T) {
+			f := setup(t, 1)
+			tk, existing, err := f.svc.Create(t.Context(), f.uid, f.idPhoto(opt[0], opt[1]))
+			if err != nil || existing {
+				t.Fatalf("create: %v existing=%v", err, existing)
+			}
+			if !tk.UsesGenmodel || tk.CreditsConsumed != 1 || tk.ConsumeLedgerID == nil {
+				t.Fatalf("task = gen %v / credits %d / ledger %v, want true / 1 / set", tk.UsesGenmodel, tk.CreditsConsumed, tk.ConsumeLedgerID)
+			}
+			if b := f.balance(t); b.Total != 0 {
+				t.Errorf("balance = %+v, want 0", b)
+			}
+			if f.enq.count() != 1 {
+				t.Errorf("enqueued %d, want 1", f.enq.count())
+			}
+		})
 	}
 }
 
-// D-18: choosing clothing or light retouch turns the same ID photo into a paid gen task.
-func TestIDPhotoWithClothingUsesGenmodel(t *testing.T) {
-	f := setup(t, 1)
-	tk, _, err := f.svc.Create(t.Context(), f.uid, f.idPhoto("m_black_suit", "natural"))
-	if err != nil {
-		t.Fatalf("create: %v", err)
-	}
-	if !tk.UsesGenmodel || tk.CreditsConsumed != 1 {
-		t.Fatalf("task = gen %v / credits %d, want true / 1", tk.UsesGenmodel, tk.CreditsConsumed)
-	}
-	if b := f.balance(t); b.Total != 0 {
-		t.Errorf("balance = %+v, want 0", b)
-	}
-}
-
-func TestIDPhotoWithLightBeautyUsesGenmodel(t *testing.T) {
-	f := setup(t, 1)
-	tk, _, err := f.svc.Create(t.Context(), f.uid, f.idPhoto("keep", "light"))
-	if err != nil {
-		t.Fatalf("create: %v", err)
-	}
-	if !tk.UsesGenmodel || tk.CreditsConsumed != 1 {
-		t.Errorf("task = gen %v / credits %d, want true / 1", tk.UsesGenmodel, tk.CreditsConsumed)
+// Row 2 for ID photos: without credits nothing is created.
+func TestIDPhotoWithoutCredits(t *testing.T) {
+	f := setup(t, 0)
+	if _, _, err := f.svc.Create(t.Context(), f.uid, f.idPhoto("keep", "natural")); !apperr.Is(err, "NO_CREDITS") {
+		t.Fatalf("err = %v, want NO_CREDITS", err)
 	}
 }
 
@@ -254,17 +232,17 @@ func TestFailRefundsOnceAndIsIdempotent(t *testing.T) {
 	}
 }
 
-// Row 17: a free ID photo still runs while the gen provider is unavailable.
-func TestBreakerBlocksGenTaskButNotFreeTask(t *testing.T) {
+// Rows 16–17: with the gen provider unavailable, every task (ID photos included) is refused before charging.
+func TestUnavailableGenRefusesAllTasks(t *testing.T) {
 	f := setup(t, 5, unavailableModel{})
 	if _, _, err := f.svc.Create(t.Context(), f.uid, f.template()); !apperr.Is(err, "GENERATION_UNAVAILABLE") {
 		t.Fatalf("template err = %v, want GENERATION_UNAVAILABLE", err)
 	}
+	if _, _, err := f.svc.Create(t.Context(), f.uid, f.idPhoto("keep", "natural")); !apperr.Is(err, "GENERATION_UNAVAILABLE") {
+		t.Fatalf("ID photo err = %v, want GENERATION_UNAVAILABLE", err)
+	}
 	if b := f.balance(t); b.Total != 5 {
 		t.Errorf("balance = %+v, want 5 (nothing consumed)", b)
-	}
-	if _, _, err := f.svc.Create(t.Context(), f.uid, f.idPhoto("keep", "natural")); err != nil {
-		t.Errorf("free ID photo refused while gen is down: %v", err)
 	}
 }
 
@@ -485,7 +463,7 @@ func TestRegenerate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	again, existing, err := f.svc.Regenerate(t.Context(), f.uid, src.ID, idgen.New())
+	again, existing, err := f.svc.Regenerate(t.Context(), f.uid, src.ID, idgen.New(), "")
 	if err != nil || existing {
 		t.Fatalf("regenerate: %v existing=%v", err, existing)
 	}
@@ -497,6 +475,32 @@ func TestRegenerate(t *testing.T) {
 	}
 	if again.TemplateID == nil || *again.TemplateID != "tp1" {
 		t.Errorf("template = %v, want tp1", again.TemplateID)
+	}
+	if b := f.balance(t); b.Total != 0 {
+		t.Errorf("balance = %+v, want 0 (both charged)", b)
+	}
+}
+
+// Changing an ID photo background is a regenerate with a new bg: same photo and spec, new colour, one credit.
+func TestRegenerateWithBackground(t *testing.T) {
+	f := setup(t, 2)
+	src, _, err := f.svc.Create(t.Context(), f.uid, f.idPhoto("m_black_suit", "natural"))
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	again, _, err := f.svc.Regenerate(t.Context(), f.uid, src.ID, idgen.New(), "#FFFFFF")
+	if err != nil {
+		t.Fatalf("regenerate: %v", err)
+	}
+	var params domain.IDPhotoParams
+	if err := again.Params.Into(&params); err != nil {
+		t.Fatalf("params: %v", err)
+	}
+	if params.Bg != "#FFFFFF" || params.Clothing != "m_black_suit" {
+		t.Errorf("params = %+v, want white background and the original clothing", params)
+	}
+	if again.SpecID == nil || *again.SpecID != "sp1" || again.PhotoID != src.PhotoID {
+		t.Errorf("spec/photo = %v/%s, want sp1/%s", again.SpecID, again.PhotoID, src.PhotoID)
 	}
 	if b := f.balance(t); b.Total != 0 {
 		t.Errorf("balance = %+v, want 0 (both charged)", b)

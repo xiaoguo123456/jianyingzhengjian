@@ -18,7 +18,8 @@ This product processes facial images and produces AI-generated portraits. Both a
 
 ### 2.1 Declarations (MP console)
 
-- Fill the 用户隐私保护指引 listing: 相册（仅图片）, 摄像头, 用户上传的照片 (purpose: 生成证件照/写真), 昵称与头像 (user-entered).
+- Fill the 用户隐私保护指引 listing: 选中的照片或视频信息 (album), 摄像头, 相册（仅写入）权限 (saving results), 用户上传的照片 (purpose: 生成证件照/写真), 昵称与头像 (user-entered). A missing entry makes `chooseImage` fail with errno 112.
+- The photo is processed by third-party models on the NewAPI gateway: a multimodal model checks it at upload and an image model generates the result (D-26). The privacy policy must name this entrusted processing of face images, and the separate consent for sensitive personal information must cover it. **Legal review**.
 - Privacy policy and user agreement hosted at a stable URL, opened in `pages/webview`. Both link from Mine tab footer and from the upload page.
 
 ### 2.2 In-app authorisation
@@ -33,10 +34,10 @@ This product processes facial images and produces AI-generated portraits. Both a
 | Data | Retention | Mechanism |
 |---|---|---|
 | Uploaded originals | 30 days or user deletion | `photos.expires_at` + daily cleanup job; an OSS lifecycle rule on `yingji/<env>/originals/` as backstop |
-| Intermediate layers | not persisted | kept in worker memory; the only stored layer is the ID-photo alpha matte, shared by a work and its recolors. Known gap: work deletion does not yet delete the matte, so it must be removed when the last work using it is deleted before launch |
+| Intermediate layers | not persisted | kept in worker memory. Legacy ID-photo mattes from before D-26 are deleted with the last work that references them |
 | Works | until user deletion | user action → soft delete + object delete within 24 h |
-| Face detection results | with the photo | stored in `photos.check_result`, deleted with the photo |
-| Provider-side copies | provider-dependent | prefer providers with no-retention options; record the choice in `templates.gen_config` |
+| Photo check results (face count, gender, issues) | with the photo | stored in `photos.check_result`, deleted with the photo |
+| Provider-side copies | provider-dependent | both the check model and the image model receive the photo through the NewAPI gateway; confirm the gateway's and the upstream models' retention terms before launch |
 
 EXIF (including GPS) is stripped from originals before storage. Originals and works are private objects served only through short-lived signed URLs.
 
@@ -51,7 +52,7 @@ The product does not target minors. The privacy policy states this; no age gate 
 
 ## 3. AI-generated content labelling
 
-Applies to professional, portrait and avatar outputs, and to ID photos where clothing was generated. Pure ID photo processing (crop, matte, background fill) is image editing, not generation. **Legal review**: confirm that background-only ID photos need no explicit label.
+Applies to every output, ID photos included: since D-26 all of them are drawn by the gen model.
 
 ### 3.1 Implicit label (always)
 
@@ -60,9 +61,9 @@ Every output written by the worker carries metadata per GB 45438-2025: XMP/EXIF 
 ### 3.2 Explicit label
 
 - In-app: every result image renders the `ai-label` chip "AI 生成" and the result page states "本图片由 AI 生成".
-- In the saved file: a small text label "AI生成" in the bottom-right corner, 3 % of the short side, 60 % opacity, for template-module outputs and clothing-swapped ID photos.
+- In the saved file: a small text label "AI生成" in the bottom-right corner (`local.DrawBadge`, about 4.5 % of the short side), on every output.
 - Share previews and posters (SHARING.md) are copies of works and always carry the visible label burned in, since they leave the app.
-- ID photos with generated clothing: the label is placed in a 24 px margin strip below the photo rather than over the face area so the photo remains usable when cropped by the user. **Legal review** of this placement.
+- ID photos: the label is currently drawn inside the photo, bottom-right. A visible mark can make an ID photo unacceptable for official submission, so product and legal must decide between keeping it, moving it to a margin strip outside the spec area, or relying on the implicit label for ID photos. **Open decision**.
 
 ### 3.3 Model filing (备案)
 

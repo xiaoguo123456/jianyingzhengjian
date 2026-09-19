@@ -501,8 +501,18 @@ func (h *Handlers) Tasks(c *gin.Context) {
 	httpx.OK(c, dto.NewPaged(items, total, p, s))
 }
 
+// Regenerate accepts an optional {"bg": "#RRGGBB"} to redraw an ID photo on another background.
 func (h *Handlers) Regenerate(c *gin.Context) {
-	t, existing, err := h.a.Task.Regenerate(c, httpx.UserID(c), c.Param("id"), c.GetHeader("Idempotency-Key"))
+	var req struct {
+		Bg string `json:"bg"`
+	}
+	if c.Request.ContentLength > 0 {
+		if err := httpx.Bind(c, &req); err != nil {
+			httpx.Fail(c, err)
+			return
+		}
+	}
+	t, existing, err := h.a.Task.Regenerate(c, httpx.UserID(c), c.Param("id"), c.GetHeader("Idempotency-Key"), req.Bg)
 	if err != nil {
 		httpx.Fail(c, err)
 		return
@@ -576,22 +586,6 @@ func (h *Handlers) DownloadWork(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, gin.H{"url": url, "expires_at": exp.UTC().Format(time.RFC3339)})
-}
-
-func (h *Handlers) Recolor(c *gin.Context) {
-	var req struct {
-		Bg string `json:"bg" binding:"required"`
-	}
-	if err := httpx.Bind(c, &req); err != nil {
-		httpx.Fail(c, err)
-		return
-	}
-	w, err := h.a.Work.Recolor(c, httpx.UserID(c), c.Param("id"), req.Bg)
-	if err != nil {
-		httpx.Fail(c, err)
-		return
-	}
-	httpx.Created(c, gin.H{"work": h.workDTO(c, w)})
 }
 
 func (h *Handlers) DeleteWork(c *gin.Context) {

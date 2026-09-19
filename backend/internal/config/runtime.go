@@ -26,18 +26,18 @@ var Defaults = map[string]any{
 	"photo_retention_days":       30,
 	"default_provider":           "mock",
 	"provider_prices":            map[string]int{},
-	"identity_threshold":         0.75,
 	"share_reward_enabled":       true,
 	"share_reward_daily_cap":     3,
 	"share_preview_ttl_days":     90,
 	"share_show_nickname":        false,
 	"upload_max_bytes":           10485760,
 	"photo_min_side_px":          600,
-	"face_min_ratio":             0.08,
-	"blur_min_var":               25.0,
-	"dark_min_luma":              60.0,
 	"share_reward_per":           1,
 	"poster_slogan":              "上传自拍，生成可以直接用的照片",
+	// ID photo instruction for the gen model. Placeholders: {bg_name} {bg_hex} {clothing} {beauty} {ratio}.
+	"idphoto_prompt": "基于这张照片中的人物生成一张标准证件照：正面免冠，头肩构图，人物居中，双眼平视镜头，表情自然，眉毛和双耳露出，头顶到画面上沿留少量空白。" +
+		"背景为纯色{bg_name}（{bg_hex}），均匀平整，没有渐变、阴影和杂物。{clothing}。{beauty}。" +
+		"保持人物的五官、脸型、发型和肤色与原照片一致，不要改变身份特征。画面宽高比 {ratio}。",
 }
 
 type appConfigRow struct {

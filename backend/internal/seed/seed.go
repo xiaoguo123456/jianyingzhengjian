@@ -117,9 +117,9 @@ func Run(ctx context.Context, db *gorm.DB, store storage.ObjectStore, assetsDir 
 	}
 
 	gen := func(prompt string, w, h int, style string, post []domain.PostOp) domain.JSON {
-		return domain.MustJSON(domain.GenConfig{Engine: "genmodel", Mode: "reference", Prompt: prompt,
+		return domain.MustJSON(domain.GenConfig{Engine: "genmodel", Mode: "edit", Prompt: prompt,
 			NegativePrompt: "text, watermark, extra fingers, distorted face", Strength: 0.55,
-			Output: &domain.GenOutput{Width: w, Height: h}, IdentityCheck: style != "illustration", Style: style, Post: post})
+			Output: &domain.GenOutput{Width: w, Height: h}, Style: style, Post: post})
 	}
 	tpl := func(id string, m domain.Module, name, cover, catID, subtitle, prompt string, tags []string, style string, sort int) domain.Template {
 		w, h := 1200, 1600

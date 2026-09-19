@@ -106,13 +106,13 @@ Returns the collection plus paged templates.
 
 ### POST /v1/photos
 multipart `file` (jpeg/png/webp, ≤ 10 MB), field `module`.
-Runs face check synchronously (target < 2 s).
+Runs the photo check synchronously: local resolution check, then one multimodal model call (target < 5 s, GENERATION_PIPELINE.md §7.4). Returns 502 `VISION_ERROR` ("照片检测暂时不可用，请稍后再试") when the check service fails.
 Response 201
 ```json
 { "photo": { "id": "01J…", "width": 3024, "height": 4032, "preview_url": "…", "expires_at": "…" },
-  "check": { "passed": true, "faces": 1, "reasons": [] } }
+  "check": { "passed": true, "faces": 1, "reasons": [], "gender": "female" } }
 ```
-Response 422 `PHOTO_REJECTED` with `data.reasons ∈ no_face | multiple_faces | face_too_small | blurry | too_dark | occluded | low_resolution` and the user-facing message "这张照片可能影响生成效果，请换一张清晰正脸照片。"
+Response 422 `PHOTO_REJECTED` with `data.reasons ∈ no_face | multiple_faces | face_too_small | blurry | too_dark | occluded | not_photo | low_resolution` and the user-facing message "这张照片可能影响生成效果，请换一张清晰正脸照片。"
 
 ### GET /v1/photos?page=
 ### DELETE /v1/photos/{id}
@@ -133,7 +133,7 @@ or
 Response 201 `{ "task": Task, "credits": Credits }`
 Errors: 402 `NO_CREDITS`, 422 `PHOTO_REJECTED` (photo not passed or expired), 503 `GENERATION_UNAVAILABLE`, 409 `CONFLICT`.
 
-The server decides `uses_genmodel` from the request: an ID photo with `clothing = "keep"` and `beauty = "natural"` is free (no credit check, no 402/503) and runs only local and vision steps (D-21). Template tasks cost `template.credit_cost`.
+Every task uses the gen model (`uses_genmodel` is always true, D-26): an ID photo costs 1 credit whatever the options, a template task costs `template.credit_cost`. Both are subject to 402 and 503.
 
 Same key + same payload → 200 with the existing task (safe retry).
 
@@ -149,7 +149,7 @@ Same key + same payload → 200 with the existing task (safe retry).
 ### GET /v1/tasks?status=&page=  (generation records, D-12)
 
 ### POST /v1/tasks/{id}/regenerate
-Creates a new task with the same inputs and a new seed; costs the same as the original task (0 for a free ID photo). Response as POST /v1/tasks.
+Header `Idempotency-Key` (required). Optional body `{ "bg": "#FFFFFF" }` for ID photos: the new task uses that background (it must be in the spec's `bg_allowed`, otherwise the spec default) and keeps the photo, spec, clothing and retouch. This is how the result page changes the background. Creates a new task with a new seed and costs the same as the original task. Response as POST /v1/tasks.
 
 ## 7. Works
 
@@ -161,8 +161,6 @@ Creates a new task with the same inputs and a new seed; costs the same as the or
 `Work = WorkCard + { url (signed, 10 min), width, height, meta, task_id, ai_label: true }`
 ### GET /v1/works/{id}/download
 `{ url, expires_at }` (fresh signed URL; the client logs a `work_saved` event after saving)
-### POST /v1/works/{id}/recolor   (ID photo, free, D-05)
-Request `{ "bg": "#FFFFFF" }` → 201 `{ "work": Work }` (synchronous composite from `alpha_key`)
 ### DELETE /v1/works/{id}
 
 ## 8. Favorites
@@ -220,7 +218,7 @@ WeChat rewarded-video server callback (enable in the traffic-master console). Ve
 | GET | /tasks?status=&module=&user_id=&from=&to= | with cost, error, provider |
 | POST | /tasks/{id}/refund | manual refund when automation missed |
 | GET | /stats/funnel?from=&to=&module= | PRD §2 metrics from `events` + `daily_stats` |
-| GET | /stats/templates?from=&to= | clicks, tasks, success rate, cost per template, gen vs free task split |
+| GET | /stats/templates?from=&to= | clicks, tasks, success rate, cost per template |
 | GET | /stats/shares?from=&to=&module= | shares by type, opens, acquired users, open → task → save conversion |
 | POST | /templates/validate | checks `gen_config` against provider capabilities and the banned-word list before save |
 | GET | /audit-logs | |

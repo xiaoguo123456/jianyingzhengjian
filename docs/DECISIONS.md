@@ -47,10 +47,10 @@ ID photo tasks reference a **spec** (`spec_id`). Professional, portrait and avat
 | Action | Cost | Implementation |
 |---|---|---|
 | Save image | 0 | Signed download URL |
-| Regenerate (再生成一张) | same as the original task: 0 for an ID photo without gen steps, otherwise `credit_cost` | New task, same inputs, new seed |
+| Regenerate (再生成一张) | same as the original task: 1 for an ID photo, `credit_cost` for a template | New task, same inputs, new seed |
 | Change template (换一个模板) | 0 to browse; 1 when a new task is confirmed | Navigates to template list with photo pre-selected |
-| ID photo: change background | 0 | Re-composite from the stored alpha layer; creates a new work |
-| ID photo: change clothing | 1 credit | New task (clothing is a generative step) |
+| ID photo: change background | 1 credit | New task from the original photo with the new `bg` (revised by D-26; was a free re-composite) |
+| ID photo: change clothing | 1 credit | New task |
 
 ## D-06 · Task timeout and retries — Decided
 
@@ -62,7 +62,7 @@ Before the task is created, the client asks for the WeChat subscribe-message tem
 
 ## D-08 · Gender for clothing templates — Decided
 
-Clothing options are shown for both genders in one list, grouped as "男士 / 女士"; the group matching the face-detection gender attribute (if the provider returns one) is listed first. No gender is stored on the user profile in V1.
+Clothing options are shown for both genders in one list, grouped as "男士 / 女士"; the group matching the gender reported by the upload photo check (D-26), if any, is listed first. No gender is stored on the user profile in V1.
 
 ## D-09 · Couple avatar — Deferred to V1.1
 
@@ -104,7 +104,7 @@ Funnel events (PRD 2) are recorded twice: `wx.reportEvent` for WeChat's built-in
 
 ## D-18 · Beauty options — Decided (confirmed by product 2026-09-11)
 
-"自然" = no retouch and no gen-model call. "轻度" = one low-strength gen-model retouch instruction, merged into the task's single gen call. Choosing "轻度" therefore turns an otherwise free ID photo into a 1-credit task; the UI states this next to the option. No slider, no manual parameters.
+"自然" = the instruction asks for no retouch. "轻度" = the instruction asks for a light natural retouch in the same single gen call. Both cost the same 1 credit, since every ID photo is drawn by the gen model (revised by D-26). No slider, no manual parameters.
 
 ## D-19 · Frontend framework — Decided
 
@@ -116,7 +116,9 @@ Go 1.26, Gin, GORM on PostgreSQL 16, Redis 7 with Asynq for background jobs, Ali
 
 Revised 2026-09-15. The original choice was MySQL 8, Tencent COS and a Volcengine Seedream provider. The deployment moved to the Alibaba Cloud hosts, PostgreSQL 16 and Redis instances the team already operates, so the database became PostgreSQL (one database per environment), storage became OSS under a per-environment prefix in a shared private bucket, and Redis keys are namespaced per environment. Image generation moved to NewAPI, the first provider verified end to end against a live service. The MySQL migration history is kept for reference only; a release never rolls back across the engine change.
 
-## D-21 · Image engines: gen model for creation, cheap engines for processing — Decided
+## D-21 · Image engines: gen model for creation, cheap engines for processing — Superseded by D-26
+
+Kept for history. The free ID photo path, the `vision` engine (face detection, face compare, matting) and free recolor described below were removed on 2026-09-18.
 
 **Problem.** The product will rely on an image-generation large model for most image types going forward, but many operations (solid background change, crop to spec, export) do not need it, and the model is the dominant cost and latency.
 
@@ -147,3 +149,15 @@ Confirmed by product on 2026-09-15. PRD V1.0 defines five tabs. The first build 
 ## D-25 · Every failed generation is refunded — Decided
 
 Confirmed by product on 2026-09-18. Whenever a task that consumed credits does not deliver a usable result, the credits go back, whatever the cause: provider errors, identity mismatch, no face, storage errors, timeouts, and content rejected by moderation, including an output flagged after the task already showed `success`. A task that never starts within `task_queue_timeout_seconds` (default 30 minutes) is failed with `TIMEOUT` and refunded as well, so a lost queue job never holds a credit. Refunds stay idempotent: one refund row per task. GENERATION_PIPELINE.md §6 lists each case.
+
+## D-26 · Every image is drawn by the gen model; no face detection or matting — Decided
+
+Confirmed by product on 2026-09-18. Supersedes D-21 and revises D-05, D-08 and D-18.
+
+- **Upload check.** A multimodal model on the NewAPI gateway (`INSPECT_PROVIDER=newapi`, `INSPECT_MODEL`) checks each upload once and returns face count, gender and quality issues. It replaces face detection. Resolution is still checked locally before any model call.
+- **ID photos.** User photo + an instruction built from `app_configs.idphoto_prompt` (background colour, clothing, retouch, ID composition) → gen model → local centre-crop and resize to the spec pixels. Every ID photo costs 1 credit, including original clothing with no retouch.
+- **Background colour.** Drawn by the model, chosen over a transparent output composited locally. The colour may deviate slightly from the hex value, and changing it is a new generation costing 1 credit (no free recolor).
+- **Templates** (pro, portrait, avatar) are a prompt plus optional reference images (`gen_config.reference_keys`, at most 4), sent in one gen call.
+- **Removed:** face detection, face comparison ("identity check" and `IDENTITY_MISMATCH`), portrait matting, the crop rule based on the face box, and the Tencent Cloud dependency.
+- **Accepted risks.** Head size and position follow the model's composition, so strict official uses (exam registration, visas) may reject some photos. The model may alter facial features, and nothing checks likeness automatically. Face images go to the gateway's multimodal model as well as to the image model (COMPLIANCE.md §2).
+
